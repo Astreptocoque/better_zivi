@@ -126,14 +126,20 @@ def fts_query(text: str) -> tuple[str | None, str | None]:
         pos.pop()
     if pos and pos[0] == "OR":
         pos.pop(0)
-    expr = ""
+    # OR binds tighter than the implicit AND, as in web search engines:
+    # "alpage chien OR chat" = alpage AND (chien OR chat). FTS5 itself ranks AND above OR,
+    # so each OR group gets its own parentheses.
+    groups: list[list[str]] = []
+    join_next = False
     for t in pos:
         if t == "OR":
-            expr += " OR "
-        elif expr and not expr.endswith(" OR "):
-            expr += " AND " + t
+            join_next = bool(groups)
+        elif join_next:
+            groups[-1].append(t)
+            join_next = False
         else:
-            expr += t
+            groups.append([t])
+    expr = " AND ".join(g[0] if len(g) == 1 else "(" + " OR ".join(g) + ")" for g in groups)
     return (expr or None), (" OR ".join(neg) or None)
 
 

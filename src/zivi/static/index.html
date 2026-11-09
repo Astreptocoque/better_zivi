@@ -16,8 +16,44 @@
     <span>Recherche Zivi</span>
   </a>
   <form class="search" id="searchForm" role="search">
-    <input id="q" type="search" autocomplete="off" spellcheck="false"
-           placeholder='Tâches, établissements, lieux — "expression exacte", -exclure, a OR b'>
+    <div class="q-wrap" id="qWrap">
+      <input id="q" type="search" autocomplete="off" spellcheck="false" aria-describedby="qHint"
+             placeholder="Rechercher des tâches, établissements, lieux…">
+      <button type="button" class="adv-toggle" id="advBtn" aria-expanded="false" aria-controls="adv"
+              title="Recherche avancée" aria-label="Recherche avancée">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 6 8 10.5 12.5 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="q-hint" id="qHint" role="tooltip">
+        <b>Comment chercher</b>
+        <dl>
+          <dt><code>jardin cuisine</code></dt><dd>tous les mots doivent figurer</dd>
+          <dt><code>pflege</code></dt><dd>début de mot : trouve aussi <i>Pflegeheim</i>, <i>Pflegefachperson</i></dd>
+          <dt><code>"aide en cuisine"</code></dt><dd>expression exacte, mots dans cet ordre</dd>
+          <dt><code>-nuit</code></dt><dd>exclut les affectations qui contiennent ce mot</dd>
+          <dt><code>chien OR chat</code></dt><dd>l’un ou l’autre (<code>OR</code> en majuscules)</dd>
+        </dl>
+        <p>Accents et majuscules sont ignorés. La recherche porte sur le titre, les tâches, les
+          compétences, l’établissement, le lieu et les cours. En mode <b>IA</b>, la phrase est comprise
+          par son sens et ces opérateurs ne s’appliquent pas.</p>
+        <p class="q-hint-foot">▾ ouvre la recherche avancée pour remplir ces options champ par champ.</p>
+      </div>
+      <div class="adv" id="adv" role="group" aria-labelledby="advTitle" hidden>
+        <div class="adv-head"><strong id="advTitle">Recherche avancée</strong>
+          <button type="button" class="link" id="advClear">Effacer</button></div>
+        <label>Tous ces mots
+          <input type="text" data-adv="all" placeholder="jardin cuisine" autocomplete="off"></label>
+        <label>Cette expression exacte
+          <input type="text" data-adv="phrase" placeholder="aide en cuisine" autocomplete="off"></label>
+        <label>Au moins un de ces mots
+          <input type="text" data-adv="any" placeholder="chien chat cheval" autocomplete="off"></label>
+        <label>Aucun de ces mots
+          <input type="text" data-adv="none" placeholder="nuit week-end" autocomplete="off"></label>
+        <p class="adv-note">Un mot trouve aussi les mots qui commencent pareil (<i>pflege</i> → <i>Pflegeheim</i>).
+          Accents et majuscules ignorés.</p>
+        <p class="adv-preview">Requête : <code id="advPreview">—</code></p>
+        <div class="adv-actions"><button type="button" class="btn primary" id="advDone">Fermer</button></div>
+      </div>
+    </div>
     <div class="seg" role="radiogroup" aria-label="Mode de recherche">
       <label><input type="radio" name="mode" value="keyword" checked><span>Mots-clés</span></label>
       <label title="Recherche par le sens, nécessite un jeton IA"><input type="radio" name="mode" value="semantic"><span>IA</span></label>

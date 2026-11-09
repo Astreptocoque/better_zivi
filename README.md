@@ -32,7 +32,7 @@ uv run zivi search "alpage" --near Lausanne --radius 40 --housing
 
 | Filter | Notes |
 |---|---|
-| Text | Title, tasks, skills, employer, place, courses. Accent-insensitive, prefix matching (`pflege` finds *Pflegeheim*), `"exact phrase"`, `-exclude`, `a OR b`. Matches are highlighted. |
+| Text | Title, tasks, skills, employer, place, courses. Accent-insensitive, prefix matching (`pflege` finds *Pflegeheim*), `"exact phrase"`, `-exclude`, `a OR b` (OR binds tighter than the other words: `alpage chien OR chat` = alpage and one of chien/chat). Hover the search box for a reminder; the ▾ button opens an advanced form with one field per option. Matches are highlighted. |
 | Period | Assignments with a start week between two dates; optionally *N weeks in a row* starting in that window, or *available every week* of the period. |
 | Around places | Any number of towns or postcodes, each with its own radius, or click the map to add a point. Results are sorted by distance. "Only what is visible on the map" filters to the current map view. |
 | Conditions | Housing, meals, reputation check, priority programme, abroad (yes / no / any); weekend and night work (yes / possible / no); no civil-service course required. |

@@ -410,7 +410,65 @@ function bindInputs() {
   $("#bboxOnly").checked = S.bboxOnly;
   renderCenters(); drawCircles();
 }
-$("#q").addEventListener("input", (e) => { S.text = e.target.value; runSearch(); });
+$("#q").addEventListener("input", (e) => { S.text = e.target.value; runSearch(); if (!$("#adv").hidden) fillAdvanced(); });
+
+/* ------------------------------------------------------------------ advanced search
+   The four fields are just another way to write the same query text as the main box:
+   all → plain words, phrase → "…", any → a OR b OR c, none → -word. */
+const advField = (k) => $(`[data-adv="${k}"]`);
+const words = (v) => (v.match(/"[^"]+"|[^\s"]+/g) || []);
+function buildQuery() {
+  const all = words(advField("all").value).join(" ");
+  const phrase = advField("phrase").value.replace(/"/g, "").trim();
+  const any = words(advField("any").value).filter((w) => w !== "OR");
+  const none = words(advField("none").value).map((w) => `-${w.replace(/^-+/, "")}`);
+  return [all, phrase && `"${phrase}"`, any.join(" OR "), none.join(" ")].filter(Boolean).join(" ");
+}
+/* Main box → fields (best effort: a second "phrase" stays in "all words", quoted). */
+function fillAdvanced() {
+  const toks = S.text.match(/-?"[^"]*"?|\S+/g) || [];
+  const f = { all: [], phrase: "", any: [], none: [] };
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i];
+    if (t === "OR") continue;
+    const orNext = toks[i + 1] === "OR", orPrev = toks[i - 1] === "OR";
+    if (t.startsWith("-") && t.length > 1) f.none.push(t.slice(1).replace(/"/g, ""));
+    else if (orNext || orPrev) f.any.push(t);
+    else if (t.startsWith('"') && !f.phrase) f.phrase = t.replace(/"/g, "");
+    else f.all.push(t);
+  }
+  advField("all").value = f.all.join(" ");
+  advField("phrase").value = f.phrase;
+  advField("any").value = f.any.join(" ");
+  advField("none").value = f.none.join(" ");
+  $("#advPreview").textContent = S.text.trim() || "—";
+}
+function setAdvanced(open) {
+  $("#adv").hidden = !open;
+  $("#advBtn").setAttribute("aria-expanded", String(open));
+  $("#qWrap").classList.toggle("adv-open", open);
+  if (open) { fillAdvanced(); advField("all").focus(); }
+}
+$("#advBtn").addEventListener("click", () => setAdvanced($("#adv").hidden));
+$("#advDone").addEventListener("click", () => { setAdvanced(false); $("#q").focus(); });
+$("#advClear").addEventListener("click", () => {
+  for (const k of ["all", "phrase", "any", "none"]) advField(k).value = "";
+  advField("all").dispatchEvent(new Event("input", { bubbles: true }));
+  advField("all").focus();
+});
+$("#adv").addEventListener("input", (e) => {
+  if (!e.target.dataset.adv) return;
+  S.text = buildQuery();
+  $("#q").value = S.text;
+  $("#advPreview").textContent = S.text || "—";
+  runSearch();
+});
+document.addEventListener("mousedown", (e) => {
+  if (!$("#adv").hidden && !e.target.closest("#qWrap")) setAdvanced(false);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("#adv").hidden) { setAdvanced(false); $("#q").focus(); }
+});
 $("#searchForm").addEventListener("submit", (e) => { e.preventDefault(); runSearchNow(); });
 $$("input[name=mode]").forEach((r) => r.addEventListener("change", () => { S.text_mode = r.value; runSearch(); }));
 $$("input[name=taMode]").forEach((r) => r.addEventListener("change", () => { S.task_areas_mode = r.value; runSearch(); }));

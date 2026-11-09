@@ -80,6 +80,9 @@ def test_text_search_prefix_and_accents(store):
 
 
 def test_fts_query_builder():
+    # OR groups bind tighter than the implicit AND
+    assert fts_query("alpage chien OR chat")[0] == '"alpage"* AND ("chien"* OR "chat"*)'
+    assert fts_query("a OR b OR c")[0] == '("a"* OR "b"* OR "c"*)'
     assert fts_query("pflege") == ('"pflege"*', None)
     pos, neg = fts_query('a "b c" -d')
     assert pos == '"a"* AND "b c"' and neg == '"d"*'
