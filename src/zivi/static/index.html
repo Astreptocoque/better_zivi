@@ -118,6 +118,8 @@
   <section class="pane results" id="results" aria-label="Résultats">
     <div class="results-head">
       <p id="count" aria-live="polite">Chargement…</p>
+      <button class="btn magic" id="rarityBtn" type="button" aria-pressed="false"
+              title="Trier par rareté : d’abord les affectations aux caractéristiques que peu d’autres partagent">✨ Raretés</button>
       <label class="sort">Trier
         <select id="sort">
           <option value="">Pertinence</option>
@@ -126,6 +128,7 @@
           <option value="min_weeks">Durée minimale la plus courte</option>
           <option value="number">Plus récentes</option>
           <option value="title">Titre</option>
+          <option value="rarity">Rareté</option>
         </select>
       </label>
     </div>

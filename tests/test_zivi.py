@@ -263,3 +263,57 @@ def test_place_suggestions_fold_postal_districts(tmp_path):
     assert [s["label"] for s in t.suggest("basel")] == ["Basel · BS"]
     assert [s["label"] for s in t.suggest("buchs")] == ["Buchs AG", "Buchs SG"]
     assert [s["label"] for s in t.suggest("vaduz")] == ["Vaduz · FL"]
+
+
+def test_rarity_sort_and_traits(store):
+    e = Engine(store[0])
+    res = e.search({"sort": "rarity"})
+    assert res["sort"] == "rarity" and res["total"] == 5
+    scores = [it["rarity"] for it in res["items"]]
+    assert scores == sorted(scores, reverse=True)
+    top = res["items"][0]
+    # with 5 records a value held by a single one (20 %) is not rare at the 5 % threshold,
+    # so lower it to check the traits are reported rarest first
+    import zivi.search as search_mod
+    old = search_mod.RARE_SHARE
+    try:
+        search_mod.RARE_SHARE = 0.2
+        e._compute_rarity()
+        rare = e.rare[top["id"]]
+        assert rare and all(r["count"] == 1 for r in rare)
+        assert {"field", "label", "value", "count", "share"} <= rare[0].keys()
+        assert e.detail(top["id"])["rare"] == rare
+    finally:
+        search_mod.RARE_SHARE = old
+
+
+def test_ai_provider_and_model_survive_restart(store, monkeypatch):
+    db, _ = store
+    monkeypatch.delenv("ZIVI_AI_MODEL", raising=False)
+    monkeypatch.delenv("ZIVI_AI_BASE_URL", raising=False)
+    import zivi.semantic as sem
+
+    def fake_embed(self, texts):
+        return np.ones((len(texts), 3), dtype=np.float32) / np.sqrt(3)
+
+    monkeypatch.setattr(sem.Embedder, "embed", fake_embed)
+    client = TestClient(create_app(db))
+    r = client.post("/api/ai/config", json={"base_url": "http://localhost:11434/v1",
+                                             "model": "nomic-embed-text", "api_key": "secret"})
+    assert r.status_code == 200
+    e = Engine(db)  # build directly so the test does not wait on the API's thread
+    e.ai.base_url, e.ai.model = "http://localhost:11434/v1", "nomic-embed-text"
+    e.semantic.build(str(db), e.ai_texts(), e.ai)
+    assert e.semantic.ready
+
+    # "restart": a new server reads the saved choice and loads the local index
+    info = TestClient(create_app(db)).get("/api/ai").json()
+    assert info["settings"]["model"] == "nomic-embed-text"
+    assert info["settings"]["base_url"] == "http://localhost:11434/v1"
+    assert info["ready"] and info["vectors"] == 5
+    saved = (db.parent / "ai_settings.json").read_text("utf-8")
+    assert "secret" not in saved  # the token is never written to disk
+
+    # an explicit environment variable still wins
+    monkeypatch.setenv("ZIVI_AI_MODEL", "text-embedding-3-small")
+    assert Engine(db).ai.model != "nomic-embed-text"

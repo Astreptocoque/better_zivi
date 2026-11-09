@@ -149,6 +149,7 @@ def create_app(db_path: Path = config.DB_PATH) -> FastAPI:
                 db.close()
         if "api_key" in body and body["api_key"] is not None:
             s.api_key = body["api_key"].strip()  # kept in memory only
+        engine.save_ai_settings()  # URL and model only, never the token
         return {"settings": s.public(), "index_ready": engine.semantic.ready}
 
     @app.post("/api/ai/test")

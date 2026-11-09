@@ -203,6 +203,8 @@ function renderCount(res) {
   const favNote = S.favorites_only ? " · favoris uniquement" : "";
   $("#count").innerHTML = `<b>${nf(res.total)}</b> ${res.total === 1 ? "affectation" : "affectations"}${favNote}${mode}`;
   $("#sort").value = S.sort || "";
+  $("#rarityBtn").setAttribute("aria-pressed", String(S.sort === "rarity"));
+  document.body.classList.toggle("rarity-mode", S.sort === "rarity");
 }
 function showWarnings(ws) { $("#warnings").innerHTML = ws.map((w) => `<p>${esc(w)}</p>`).join(""); }
 function renderEmpty(res) {
@@ -235,11 +237,21 @@ function itemHtml(it) {
   const dist = it.distance_km != null ? `<span class="dist">${it.distance_km} km</span>` : "";
   const snip = it.snippet ? `<p class="snip">${sanitizeSnippet(it.snippet)}</p>` : "";
   const sec = it.sector ? `<span class="sec" style="--c:${sectorColor(sectorCode(it.sector))}">${esc(sectorName(it.sector))}</span>` : "";
+  const rare = S.sort === "rarity" && it.rare?.length ? `<div class="rare">${rareChips(it.rare, 4)}</div>` : "";
   return `<li class="item" data-id="${it.id}" tabindex="0">${favBtn(it.id)}${dist}
     <h4>${esc(it.title)}</h4>${sec}
     <div class="who">${esc(it.employer)} · ${esc(it.place || "")}</div>
     <div class="facts">${facts.map((f) => `<span>${f}</span>`).join("")}</div>
-    <div class="facts">${(it.task_areas || []).map(esc).join(", ")}</div>${snip}</li>`;
+    <div class="facts">${(it.task_areas || []).map(esc).join(", ")}</div>${rare}${snip}</li>`;
+}
+/* "Durée minimale : 1 semaine · 0,3 %" — the rarest traits first, as given by the server */
+function rareChips(rare, max = Infinity) {
+  const pct = (s) => (s < 0.001 ? "< 0,1 %" : `${(s * 100).toLocaleString("fr-CH", { maximumFractionDigits: s < 0.01 ? 1 : 0 })} %`);
+  const chips = rare.slice(0, max).map((r) => `<span class="rare-chip" title="${esc(
+    `${plural(r.count, "affectation", "affectations")} sur l’ensemble (${pct(r.share)}) ont cette caractéristique`)}">
+    ✨ ${esc(r.label)} : <b>${esc(r.value)}</b> <small>${pct(r.share)}</small></span>`);
+  const more = rare.length > max ? `<span class="rare-more">+${rare.length - max}</span>` : "";
+  return chips.join("") + more;
 }
 function sanitizeSnippet(s) { return esc(s).replace(/&lt;mark&gt;/g, "<mark>").replace(/&lt;\/mark&gt;/g, "</mark>"); }
 function fmtDate(iso) { const [y, m, d] = iso.split("-"); return `${d}.${m}.${y}`; }
@@ -369,6 +381,12 @@ $("#pDur").addEventListener("input", (e) => { S.period.duration_weeks = e.target
 $("#pAll").addEventListener("change", (e) => { S.period.mode = e.target.checked ? "all" : "any"; runSearch(); });
 $("#noCourse").addEventListener("change", (e) => { S.no_course_required = e.target.checked; runSearch(); });
 $("#sort").addEventListener("change", (e) => { S.sort = e.target.value; runSearch(); });
+let sortBeforeRarity = "";
+$("#rarityBtn").addEventListener("click", () => {
+  if (S.sort === "rarity") S.sort = sortBeforeRarity === "rarity" ? "" : sortBeforeRarity;
+  else { sortBeforeRarity = S.sort || ""; S.sort = "rarity"; }
+  runSearchNow();
+});
 $("#more").addEventListener("click", loadMore);
 function resetAll() {
   const keep = { text_mode: S.text_mode, ai_top_k: S.ai_top_k, favorites_only: S.favorites_only };
@@ -440,6 +458,7 @@ async function openDetail(id) {
       ${fact("À l’étranger", d.abroad ? "Oui" : "")}
     </dl>
     <p>${(d.task_areas || []).map(esc).join(", ")}</p>
+    ${d.rare?.length ? `<section class="d-sec"><h3>Ce qui la rend rare</h3><div class="rare">${rareChips(d.rare)}</div></section>` : ""}
     ${sec("Tâches", d.tasks)}
     ${sec("Compétences requises", d.required_skills)}
     ${sec("Compétences souhaitées", d.desired_skills)}

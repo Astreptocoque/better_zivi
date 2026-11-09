@@ -30,7 +30,7 @@
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-html, body { height: 100%; margin: 0; }
+html, body { height: 100%; margin: 0; overflow: hidden; } /* only the panes scroll */
 body {
   font-family: "Atkinson Hyperlegible", system-ui, sans-serif;
   color: var(--ink); background: var(--mist);
@@ -58,7 +58,7 @@ h3 { font-size: 1rem; margin: 0 0 .5rem; display: flex; align-items: center; jus
 }
 .search input[type=search]:focus { border-color: var(--spruce); background: var(--panel); outline: none; }
 .seg { display: flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-.seg label { display: flex; }
+.seg label { position: relative; display: flex; }
 .seg input { position: absolute; opacity: 0; pointer-events: none; }
 .seg span { padding: .55rem .8rem; cursor: pointer; color: var(--slate); }
 .seg input:checked + span { background: var(--spruce); color: var(--panel); }
@@ -78,7 +78,10 @@ h3 { font-size: 1rem; margin: 0 0 .5rem; display: flex; align-items: center; jus
 
 /* ---- layout */
 .tabs { display: none; }
-.layout { flex: 1; display: grid; grid-template-columns: 300px minmax(340px, 440px) 1fr; min-height: 0; }
+.layout {
+  flex: 1; display: grid; grid-template-columns: 300px minmax(340px, 440px) 1fr; min-height: 0;
+  grid-template-rows: minmax(0, 1fr); /* without it the row grows to the longest pane */
+}
 .pane { min-height: 0; overflow: auto; }
 .filters { background: var(--panel); border-right: 1px solid var(--line); padding: .8rem 1rem 2rem; }
 .filters-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: .4rem; }
@@ -112,10 +115,10 @@ h3 { font-size: 1rem; margin: 0 0 .5rem; display: flex; align-items: center; jus
 .facet .n { color: var(--slate); font-size: .82rem; }
 .facet label.zero { opacity: .45; }
 .chipsel { display: flex; flex-wrap: wrap; gap: .3rem; }
-.chipsel label { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: .15rem .55rem; font-size: .85rem; }
+.chipsel label { position: relative; display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: .15rem .55rem; font-size: .85rem; }
 .chipsel label:has(input:checked) { background: var(--spruce); border-color: var(--spruce); color: var(--panel); }
 .chipsel label:has(input:checked) .n { color: var(--panel); }
-.chipsel input { position: absolute; opacity: 0; }
+.chipsel input { position: absolute; inset: 0; opacity: 0; } /* stays inside its chip, not the page */
 .chipsel label:has(input:focus-visible) { outline: 2px solid var(--focus); }
 .mini-seg { font-weight: 400; font-size: .82rem; color: var(--slate); display: flex; gap: .5rem; }
 .mini-seg label { display: inline-flex; gap: .2rem; align-items: center; color: var(--slate); }
@@ -192,6 +195,20 @@ h3 { font-size: 1rem; margin: 0 0 .5rem; display: flex; align-items: center; jus
 .facet .swatch { margin-right: .1rem; }
 .sec { display: inline-flex; align-items: center; gap: .3rem; font-size: .8rem; color: var(--slate); }
 .sec::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+.magic { margin-left: auto; padding: .3rem .6rem; font-size: .88rem; }
+.magic[aria-pressed=true] { background: #F3EBFF; border-color: #8A5CD6; color: #4B2A8A; font-weight: 700; }
+@media (prefers-color-scheme: dark) { .magic[aria-pressed=true] { background: #2E2245; border-color: #A784E6; color: #E4D6FF; } }
+.rare { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .45rem; }
+.rare-chip {
+  display: inline-block; font-size: .8rem; line-height: 1.35;
+  padding: .12rem .5rem; border-radius: 999px; background: #F3EBFF; color: #3F2475; border: 1px solid #DCCBFA;
+}
+.rare-chip small { color: #6B4FA3; }
+.rare-more { font-size: .8rem; color: var(--slate); align-self: center; }
+@media (prefers-color-scheme: dark) {
+  .rare-chip { background: #2E2245; color: #E4D6FF; border-color: #4A3870; }
+  .rare-chip small { color: #BFA8EC; }
+}
 .pop-actions { display: flex; align-items: center; gap: .4rem; }
 .leaflet-popup-content { font-family: inherit; font-size: .92rem; }
 .leaflet-popup-content h4 { margin: 0 0 .2rem; font-size: 1rem; }
@@ -244,7 +261,7 @@ pre { background: var(--mist); padding: .6rem; border-radius: 6px; font-size: .8
   .tabs { display: flex; background: var(--panel); border-bottom: 1px solid var(--line); }
   .tabs button { flex: 1; border: 0; background: none; padding: .6rem; cursor: pointer; border-bottom: 3px solid transparent; }
   .tabs button.on { border-bottom-color: var(--spruce); font-weight: 700; }
-  .layout { grid-template-columns: 1fr; }
+  .layout { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr); }
   .pane { display: none; }
   .pane.on { display: block; }
   .mapwrap.on { display: block; height: 100%; }

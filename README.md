@@ -45,6 +45,12 @@ current page, are drawn on the map, coloured by sector; when zoomed out, nearby 
 are grouped into pie-chart bubbles split by sector. The sector filter shows each sector's
 colour.
 
+**✨ Raretés** (next to the sort menu) puts first the assignments with unusual traits:
+values that at most 5 % of all assignments share, such as abroad, a 1-week minimum, night
+work or a rare type of task. Each result shows its rare traits with their share; the
+detail panel lists them under *Ce qui la rend rare*. Click the button again to go back to
+the previous sort.
+
 Click the star ☆ on any assignment (list, map popup or detail panel) to mark it as a
 favourite. **Favoris** in the top bar then shows only your favourites: the list, the map and
 the filter counts are all limited to them. Favourites are stored in `data/favorites.json`
@@ -62,7 +68,9 @@ search mode next to the search box:
 
 Works with any OpenAI-compatible embeddings API: OpenAI, Mistral, or a local
 [Ollama](https://ollama.com) (`ollama pull nomic-embed-text`, no token needed).
-The token is kept only in the local server's memory, never written to disk. Tick
+The token is kept only in the local server's memory, never written to disk. The chosen
+provider URL and model are saved in `data/ai_settings.json`, so after a restart the matching
+index (for example a local Ollama one) is loaded again without opening AI settings. Tick
 "Remember the token in this browser" to keep it in your browser's storage instead of
 re-entering it after a restart. You can also set it as an environment variable:
 `ZIVI_AI_API_KEY`, `ZIVI_AI_BASE_URL`, `ZIVI_AI_MODEL`.

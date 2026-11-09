@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import sqlite3
 import threading
@@ -39,6 +40,45 @@ def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dp, dl = p2 - p1, math.radians(lon2 - lon1)
     a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
     return 2 * r * math.asin(math.sqrt(a))
+
+
+RARE_SHARE = 0.05  # a value shared by at most 5 % of all assignments counts as rare
+RARE_DECAY = 0.3   # weight of the 2nd, 3rd… rarest trait relative to the one before
+YES_NO = {1: "Oui", 0: "Non"}
+J_N_M = {"J": "Oui", "N": "Non", "M": "Possible"}
+
+
+def rarity_traits(r: dict, task_areas: list[str]) -> list[tuple[str, str, Any]]:
+    """(key, label shown to the user, value text) for every attribute used to judge rarity."""
+    out: list[tuple[str, str, Any]] = []
+    if r.get("sector"):
+        out.append(("sector", "Domaine", re.sub(r"^\s*\d+\s*", "", r["sector"])))
+    if r.get("work_model"):
+        out.append(("work_model", "Horaire", r["work_model"]))
+    if r.get("language"):
+        out.append(("language", "Langue", LABELS["language"].get(r["language"], r["language"])))
+    for c in (r.get("canton") or "").split(","):
+        if c:
+            out.append(("canton", "Canton", c))
+    if r.get("weekend") in J_N_M:
+        out.append(("weekend", "Travail le week-end", J_N_M[r["weekend"]]))
+    if r.get("night") in J_N_M:
+        out.append(("night", "Travail de nuit", J_N_M[r["night"]]))
+    for field, label in (("housing", "Logement"), ("meals", "Repas"),
+                         ("reputation_check", "Contrôle de réputation"),
+                         ("priority_program", "Programme prioritaire"),
+                         ("abroad", "À l'étranger")):
+        out.append((field, label, YES_NO[1 if r.get(field) else 0]))
+    if r.get("min_weeks"):
+        out.append(("min_weeks", "Durée minimale", f"{r['min_weeks']} semaine{'s' if r['min_weeks'] > 1 else ''}"))
+    h = r.get("hours_per_week")
+    if h:  # ranges, otherwise odd values like 41.36 h would all look "rare"
+        band = ("moins de 40 h" if h < 40 else "40 à 42,5 h" if h <= 42.5
+                else "43 à 45 h" if h <= 45 else "plus de 45 h")
+        out.append(("hours_per_week", "Heures par semaine", band))
+    for t in task_areas:
+        out.append(("task_areas", "Tâche", t))
+    return out
 
 
 def sector_code(sector: str | None) -> str | None:
@@ -108,7 +148,30 @@ class Engine:
         self.fav_path = Path(self.db_path).with_name("favorites.json")
         self.favorites: set[int] = set()
         self._load_favorites()
+        # provider and model chosen in the UI (never the token), so the matching AI index
+        # is loaded again after a restart
+        self.ai_path = Path(self.db_path).with_name("ai_settings.json")
+        self._load_ai_settings()
         self.load()
+
+    # ------------------------------------------------------------------ AI settings
+    def _load_ai_settings(self) -> None:
+        try:
+            saved = json.loads(self.ai_path.read_text("utf-8"))
+        except (OSError, ValueError):
+            return
+        # an explicit environment variable still wins over the saved choice
+        if saved.get("base_url") and not os.environ.get("ZIVI_AI_BASE_URL"):
+            self.ai.base_url = str(saved["base_url"])
+        if saved.get("model") and not os.environ.get("ZIVI_AI_MODEL"):
+            self.ai.model = str(saved["model"])
+
+    def save_ai_settings(self) -> None:
+        self.ai_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.ai_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"base_url": self.ai.base_url, "model": self.ai.model}),
+                       "utf-8")
+        tmp.replace(self.ai_path)
 
     # ------------------------------------------------------------------ favourites
     def _load_favorites(self) -> None:
@@ -139,6 +202,7 @@ class Engine:
     def load(self) -> None:
         with self.lock:
             self.rows, self.task_areas, self.weeks, self.locations = {}, {}, {}, {}
+            self.rare, self.rarity = {}, {}
             self.report: dict = {}
             if not Path(self.db_path).exists():
                 return
@@ -166,6 +230,35 @@ class Engine:
                 self.semantic.load(db, self.ai.model)
             finally:
                 db.close()
+            self._compute_rarity()
+
+    def _compute_rarity(self) -> None:
+        """Per assignment: its rare attribute values (rarest first) and a rarity score.
+
+        Shares are measured over the whole database so they don't change with the filters.
+        The score is the surprisal (-log2 share) of the rarest value plus a decaying share of
+        the next ones: one very rare trait (abroad, 0.1 %) outranks many mildly rare ones,
+        and among equally rare entries, the one with more rare traits comes first.
+        """
+        traits = {i: rarity_traits(r, self.task_areas.get(i, [])) for i, r in self.rows.items()}
+        counts: dict[tuple[str, Any], int] = defaultdict(int)
+        for ts in traits.values():
+            for key, _label, value in set(ts):
+                counts[(key, value)] += 1
+        n = max(len(self.rows), 1)
+        self.rare: dict[int, list[dict]] = {}
+        self.rarity: dict[int, float] = {}
+        for i, ts in traits.items():
+            rare = []
+            for key, label, value in dict.fromkeys(ts):
+                c = counts[(key, value)]
+                if c / n <= RARE_SHARE:
+                    rare.append({"field": key, "label": label, "value": value,
+                                 "count": c, "share": round(c / n, 4)})
+            rare.sort(key=lambda x: x["count"])
+            self.rare[i] = rare
+            self.rarity[i] = sum(-math.log2(max(x["share"], 1 / n)) * RARE_DECAY ** k
+                                 for k, x in enumerate(rare))
 
     # ------------------------------------------------------------------ helpers
     def ai_texts(self) -> dict[int, str]:
@@ -423,6 +516,9 @@ class Engine:
             order = sorted(matched, key=lambda i: (-score.get(i, -1e9), -(self.rows[i]["number"] or 0)))
         elif sort == "distance" and centers:
             order = sorted(matched, key=lambda i: (dist.get(i) is None, dist.get(i) or 0))
+        elif sort == "rarity":
+            order = sorted(matched, key=lambda i: (-self.rarity.get(i, 0),
+                                                   -(self.rows[i]["number"] or 0)))
         elif sort == "min_weeks":
             order = sorted(matched, key=lambda i: (self.rows[i]["min_weeks"] or 999))
         elif sort == "title":
@@ -442,6 +538,8 @@ class Engine:
             item = {k: r.get(k) for k in SUMMARY_FIELDS}
             item["task_areas"] = self.task_areas.get(i, [])
             item["favorite"] = i in self.favorites
+            item["rare"] = self.rare.get(i, [])
+            item["rarity"] = round(self.rarity.get(i, 0.0), 2)
             item["score"] = round(score[i], 4) if i in score else None
             item["distance_km"] = round(dist[i], 1) if dist.get(i) is not None else None
             item["snippet"] = snips.get(i)
@@ -475,6 +573,7 @@ class Engine:
             out = {k: r[k] for k in r.keys() if k != "raw"}
             out["task_areas"] = self.task_areas.get(i, [])
             out["favorite"] = i in self.favorites
+            out["rare"] = self.rare.get(i, [])
             out["weeks"] = self.weeks.get(i, ([], []))[0]
             out["locations"] = self.locations.get(i, [])
             return out

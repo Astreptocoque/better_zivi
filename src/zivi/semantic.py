@@ -1,7 +1,8 @@
 """Optional semantic search with embeddings from any OpenAI-compatible endpoint.
 
 The API key is only kept in memory (set through the UI or the ZIVI_AI_API_KEY environment
-variable) and is never written to disk. Vectors are stored in the ``embeddings`` table.
+variable) and is never written to disk. Vectors are stored in the ``embeddings`` table; the
+chosen base URL and model are saved in ``ai_settings.json`` next to the database.
 Works with OpenAI, Mistral, Azure OpenAI (v1-compatible), or a local Ollama
 (base_url http://localhost:11434/v1, model e.g. nomic-embed-text, any key).
 """
