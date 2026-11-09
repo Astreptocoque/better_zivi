@@ -235,3 +235,31 @@ def test_sector_code():
     from zivi.search import sector_code
     assert sector_code("2 Social") == "2"
     assert sector_code(None) is None
+
+
+def test_place_suggestions_fold_postal_districts(tmp_path):
+    from zivi.geocode import PostcodeTable
+    rows = [
+        ("1000", "Lausanne 26", "VD", 46.5557, 6.6962),
+        ("1000", "Lausanne 10", "VD", 46.5218, 6.633),
+        ("1001", "Lausanne", "VD", 46.516, 6.6328),
+        ("1014", "Lausanne Adm cant", "VD", 46.52, 6.63),
+        ("4417", "Lausen", "BL", 47.47, 7.76),
+        ("4001", "Basel", "BS", 47.556, 7.59),
+        ("4040", "Basel", "BL", 47.5186, 7.6174),  # PostFinance centre in Münchenstein
+        ("9470", "Buchs SG", "SG", 47.17, 9.47),
+        ("5033", "Buchs AG", "AG", 47.39, 8.08),
+    ]
+    (tmp_path / "CH.txt").write_text("".join(
+        f"CH\t{plz}\t{name}\tx\t{c}\t\t\t\t\t{la}\t{lo}\t\n" for plz, name, c, la, lo in rows),
+        encoding="utf-8")
+    (tmp_path / "LI.txt").write_text("LI\t9490\tVaduz\tVaduz\t7001\t\t\t\t\t47.14\t9.52\t6\n",
+                                     encoding="utf-8")
+    t = PostcodeTable(tmp_path, download=False)
+    lausanne = t.suggest("lausanne")
+    assert [s["label"] for s in lausanne] == ["Lausanne · VD"]
+    assert (lausanne[0]["lat"], lausanne[0]["lon"]) == (46.516, 6.6328)  # the plain entry
+    assert [s["label"] for s in t.suggest("laus")] == ["Lausen · BL", "Lausanne · VD"]
+    assert [s["label"] for s in t.suggest("basel")] == ["Basel · BS"]
+    assert [s["label"] for s in t.suggest("buchs")] == ["Buchs AG", "Buchs SG"]
+    assert [s["label"] for s in t.suggest("vaduz")] == ["Vaduz · FL"]

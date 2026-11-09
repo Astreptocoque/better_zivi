@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 import sqlite3
 import time
 import unicodedata
@@ -48,12 +49,18 @@ def norm(text: str | None) -> str:
     return " ".join(out.split())
 
 
+# "Lausanne 26", "Bern 60 UPD", "Lugano 2 Paradiso Caselle" -> the town before the number
+DISTRICT_RE = re.compile(r"\s+\d+(\s.*)?$")
+
+
 class PostcodeTable:
     """GeoNames postcode table for CH and LI: postcode/name -> lat, lon, canton."""
 
     def __init__(self, directory: Path = config.GEONAMES_DIR, download: bool = True):
         self.by_plz: dict[str, GeoResult] = {}
         self.by_name: dict[str, GeoResult] = {}
+        self._rows: list[tuple[str, str, float, float, str | None]] = []
+        self._places: list[dict] | None = None
         self.available = False
         for cc in ("CH", "LI"):
             path = directory / f"{cc}.txt"
@@ -87,17 +94,84 @@ class PostcodeTable:
                     lat, lon = float(row[9]), float(row[10])
                 except ValueError:
                     continue
-                canton = a1code or ("FL" if cc == "LI" else None)
+                canton = "FL" if cc == "LI" else (a1code or None)  # LI rows carry "7001"…
                 s = sums.setdefault(plz, [0.0, 0.0, 0])
                 s[0] += lat
                 s[1] += lon
                 s[2] += 1
                 canton_of[plz] = canton
+                self._rows.append((name, plz, lat, lon, canton))
                 key = norm(name)
                 if key and key not in self.by_name:
                     self.by_name[key] = GeoResult(lat, lon, canton, "geonames-name")
         for plz, (la, lo, n) in sums.items():
             self.by_plz[plz] = GeoResult(la / n, lo / n, canton_of.get(plz), "geonames-plz")
+
+    @property
+    def places(self) -> list[dict]:
+        """One entry per town and canton for the place search box.
+
+        Swiss Post splits big towns into numbered delivery districts ("Lausanne 10",
+        "Lausanne 26", "Bern 60 UPD"...). They are folded into their town; its position is
+        the plain entry ("1001 Lausanne") when there is one, else the districts' average.
+        """
+        if getattr(self, "_places", None) is None:
+            towns: dict[tuple[str, str | None], dict] = {}
+            for name, plz, lat, lon, canton in getattr(self, "_rows", None) or [
+                    (n, "", g.lat, g.lon, g.canton) for n, g in self.by_name.items()]:
+                base = DISTRICT_RE.sub("", name).strip() or name
+                t = towns.setdefault((norm(base), canton), {
+                    "label": base, "plzs": set(), "plain": [0.0, 0.0, 0], "all": [0.0, 0.0, 0]})
+                if plz:
+                    t["plzs"].add(plz)
+                for acc in (t["all"], t["plain"]) if base == name else (t["all"],):
+                    acc[0] += lat
+                    acc[1] += lon
+                    acc[2] += 1
+            # Big towns also have large-customer postcodes ("Zürich Helsana", "Bern UBS",
+            # "Lausanne Adm cant"): fold "<town> <anything>" into a real town of the same
+            # canton (longest match), so "Bernex" or "Stein am Rhein" (SH) stay apart.
+            for (key, canton) in sorted(towns, key=lambda kc: -len(kc[0])):
+                words = key.split(" ")
+                for n in range(len(words) - 1, 0, -1):
+                    target = towns.get((" ".join(words[:n]), canton))
+                    if target and target["plain"][2]:
+                        t = towns.pop((key, canton))
+                        target["plzs"] |= t["plzs"]
+                        break
+            self._places = []
+            for (key, canton), t in sorted(towns.items(), key=lambda kv: -len(kv[1]["plzs"])):
+                la, lo, n = t["plain"] if t["plain"][2] else t["all"]
+                place = {"key": key, "label": t["label"], "canton": canton,
+                         "plz": min(t["plzs"]) if t["plzs"] else None,
+                         "lat": la / n, "lon": lo / n}
+                # same name a few km away in another canton is the same town
+                # ("4040 Basel" is a PostFinance centre in Münchenstein BL)
+                if not any(p["key"] == key and abs(p["lat"] - place["lat"]) < 0.08
+                           and abs(p["lon"] - place["lon"]) < 0.1 for p in self._places):
+                    self._places.append(place)
+            self._places.sort(key=lambda x: (x["key"], x["canton"] or ""))
+        return self._places
+
+    def suggest(self, text: str, limit: int = 8) -> list[dict]:
+        """Towns whose name starts with the text: exact name first, then shortest names."""
+        key = norm(text)
+        if not key:
+            return []
+        hits = [p for p in self.places if p["key"].startswith(key)]
+        hits.sort(key=lambda p: (p["key"] != key, len(p["key"]), p["key"]))
+        hits = hits[:limit]
+        names = [h["key"] for h in hits]
+        out = []
+        for h in hits:
+            label = h["label"].title() if h["label"].islower() else h["label"]
+            if h["canton"] and names.count(h["key"]) > 1:
+                label += f" ({h['canton']})"  # Aesch (BL) / Aesch (LU)
+            elif h["canton"] and not label.endswith(f" {h['canton']}"):  # not "Buchs AG · AG"
+                label += f" · {h['canton']}"
+            out.append({"label": label, "lat": h["lat"], "lon": h["lon"],
+                        "source": "geonames-name"})
+        return out
 
     def plz(self, plz: str | None) -> GeoResult | None:
         return self.by_plz.get(str(plz).strip()) if plz else None
@@ -224,13 +298,7 @@ class Geocoder:
             if g:
                 out.append({"label": text, "lat": g.lat, "lon": g.lon, "source": g.source})
         else:
-            key = norm(text)
-            for name, g in self.table.by_name.items():
-                if name == key or name.startswith(key):
-                    out.append({"label": name.title(), "lat": g.lat, "lon": g.lon,
-                                "source": g.source})
-                    if len(out) >= 8:
-                        break
+            out = self.table.suggest(text)
         if not out and self.online:
             try:
                 r = self.client.get(SWISSTOPO_URL, params={
