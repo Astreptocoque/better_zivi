@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zivi search</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23D52B1E'/><path d='M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z' fill='white'/></svg>">
+<link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="/static/vendor/leaflet/MarkerCluster.css">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="/" aria-label="Zivi search home">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="6"/><path d="M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z"/></svg>
+    <span>Zivi search</span>
+  </a>
+  <form class="search" id="searchForm" role="search">
+    <input id="q" type="search" autocomplete="off" spellcheck="false"
+           placeholder='Search tasks, employers, places — "exact phrase", -exclude, a OR b'>
+    <div class="seg" role="radiogroup" aria-label="Search mode">
+      <label><input type="radio" name="mode" value="keyword" checked><span>Keywords</span></label>
+      <label title="Meaning-based search, needs an AI token"><input type="radio" name="mode" value="semantic"><span>AI</span></label>
+      <label title="Keywords and AI combined"><input type="radio" name="mode" value="hybrid"><span>Both</span></label>
+    </div>
+  </form>
+  <div class="actions">
+    <label class="btn" for="fileInput" title="Load a ZiviConnect JSON export">Load JSON</label>
+    <input id="fileInput" type="file" accept=".json,application/json" hidden>
+    <button class="btn" id="aiBtn" type="button">AI settings</button>
+    <button class="btn" id="exportBtn" type="button" title="Download the current results as CSV">Export CSV</button>
+  </div>
+</header>
+
+<nav class="tabs" aria-label="Panels">
+  <button data-pane="filters">Filters</button>
+  <button data-pane="results" class="on">Results</button>
+  <button data-pane="map">Map</button>
+</nav>
+
+<main class="layout">
+  <aside class="pane filters" id="filters" aria-label="Filters">
+    <div class="filters-head">
+      <strong>Filters</strong>
+      <button class="link" id="resetBtn" type="button">Clear all</button>
+    </div>
+
+    <section class="group" aria-labelledby="h-period">
+      <h3 id="h-period">Period</h3>
+      <div class="row2">
+        <label>From<input type="date" id="pFrom"></label>
+        <label>To<input type="date" id="pTo"></label>
+      </div>
+      <label class="inline">Starting in this period, for at least
+        <input type="number" id="pDur" min="1" max="52" placeholder="–" class="num"> weeks in a row</label>
+      <label class="check"><input type="checkbox" id="pAll"> Available every week of the period</label>
+    </section>
+
+    <section class="group" aria-labelledby="h-place">
+      <h3 id="h-place">Around places</h3>
+      <div class="place-input">
+        <input id="placeQ" type="text" placeholder="Town or postcode, e.g. Lausanne or 3800" autocomplete="off">
+        <ul id="placeSug" class="suggest" role="listbox" hidden></ul>
+      </div>
+      <label class="inline">Radius <input type="range" id="radius" min="1" max="150" value="25">
+        <output id="radiusOut">25 km</output></label>
+      <ul id="centers" class="chips"></ul>
+      <label class="check"><input type="checkbox" id="clickAdd"> Add a place by clicking the map</label>
+      <label class="check"><input type="checkbox" id="bboxOnly"> Only what is visible on the map</label>
+    </section>
+
+    <section class="group" aria-labelledby="h-cond">
+      <h3 id="h-cond">Conditions</h3>
+      <div class="tri" data-field="housing"><span>Housing offered</span></div>
+      <div class="tri" data-field="meals"><span>Meals offered</span></div>
+      <div class="tri" data-field="reputation_check"><span>Reputation check</span></div>
+      <div class="tri" data-field="priority_program"><span>Priority programme</span></div>
+      <div class="tri" data-field="abroad"><span>Abroad</span></div>
+      <div class="multi" data-field="weekend"><span>Weekend work</span><div class="opts"></div></div>
+      <div class="multi" data-field="night"><span>Night work</span><div class="opts"></div></div>
+      <label class="check"><input type="checkbox" id="noCourse"> No civil-service course required</label>
+    </section>
+
+    <section class="group" aria-labelledby="h-dur">
+      <h3 id="h-dur">Duration and hours</h3>
+      <div class="row2">
+        <label>Min. duration from<input type="number" id="mwMin" min="1" max="52" placeholder="weeks"></label>
+        <label>to<input type="number" id="mwMax" min="1" max="52" placeholder="weeks"></label>
+      </div>
+      <div class="row2">
+        <label>Hours/week from<input type="number" id="hMin" min="0" max="60"></label>
+        <label>to<input type="number" id="hMax" min="0" max="60"></label>
+      </div>
+    </section>
+
+    <section class="group" aria-labelledby="h-tasks">
+      <h3 id="h-tasks">Types of tasks
+        <span class="mini-seg"><label><input type="radio" name="taMode" value="any" checked>any</label><label><input type="radio" name="taMode" value="all">all</label></span>
+      </h3>
+      <div class="facet" data-field="task_areas"></div>
+    </section>
+
+    <section class="group" aria-labelledby="h-canton">
+      <h3 id="h-canton">Canton</h3>
+      <div class="facet chipsel" data-field="canton"></div>
+    </section>
+
+    <section class="group" aria-labelledby="h-more">
+      <h3 id="h-more">More</h3>
+      <p class="hint">Language is guessed from the description text.</p>
+      <div class="facet" data-field="language"></div>
+      <div class="facet" data-field="sector"></div>
+      <div class="facet" data-field="work_model"></div>
+    </section>
+  </aside>
+
+  <section class="pane results" id="results" aria-label="Results">
+    <div class="results-head">
+      <p id="count" aria-live="polite">Loading…</p>
+      <label class="sort">Sort
+        <select id="sort">
+          <option value="">Best match</option>
+          <option value="distance">Distance</option>
+          <option value="first_week">Earliest start</option>
+          <option value="min_weeks">Shortest minimum duration</option>
+          <option value="number">Newest</option>
+          <option value="title">Title</option>
+        </select>
+      </label>
+    </div>
+    <div id="warnings"></div>
+    <ol id="list" class="list"></ol>
+    <button id="more" class="btn wide" hidden>Show more</button>
+    <div id="empty" class="empty" hidden></div>
+  </section>
+
+  <section class="pane mapwrap" id="mapPane" aria-label="Map">
+    <div id="map"></div>
+    <div class="map-legend" id="mapInfo"></div>
+  </section>
+</main>
+
+<div class="drawer" id="drawer" hidden>
+  <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="dTitle">
+    <button class="close" id="drawerClose" aria-label="Close">×</button>
+    <div id="drawerBody"></div>
+  </div>
+</div>
+
+<dialog id="importDlg">
+  <h2>Loading data</h2>
+  <p id="impMsg">Uploading…</p>
+  <div class="progress"><div id="impBar"></div></div>
+  <pre id="impReport" hidden></pre>
+  <form method="dialog"><button class="btn primary" id="impClose" disabled>Close</button></form>
+</dialog>
+
+<dialog id="aiDlg">
+  <form method="dialog" id="aiForm">
+    <h2>AI search</h2>
+    <p class="hint">Finds assignments by meaning ("working with animals outdoors") using text
+      embeddings. Works with any OpenAI-compatible service, or a local Ollama without a token.
+      The token stays in the local server's memory and is never written to disk.</p>
+    <label>Provider
+      <select id="aiPreset">
+        <option value="openai">OpenAI — text-embedding-3-small</option>
+        <option value="mistral">Mistral — mistral-embed</option>
+        <option value="ollama">Ollama on this computer — nomic-embed-text</option>
+        <option value="custom">Custom</option>
+      </select>
+    </label>
+    <label>API base URL<input id="aiBase" type="url" required></label>
+    <label>Model<input id="aiModel" type="text" required></label>
+    <label>Token<input id="aiKey" type="password" autocomplete="off" placeholder="sk-…"></label>
+    <label class="check"><input type="checkbox" id="aiRemember"> Remember the token in this browser</label>
+    <label>Results kept by AI search
+      <select id="aiTopK">
+        <option value="50">The 50 closest</option>
+        <option value="100">The 100 closest</option>
+        <option value="200" selected>The 200 closest</option>
+        <option value="500">The 500 closest</option>
+        <option value="0">All, ranked by closeness</option>
+      </select>
+    </label>
+    <p id="aiStatus" class="status"></p>
+    <div class="progress" id="aiProg" hidden><div id="aiBar"></div></div>
+    <div class="dlg-actions">
+      <button class="btn" type="button" id="aiTest">Test connection</button>
+      <button class="btn primary" type="button" id="aiBuild">Build AI index</button>
+      <button class="btn" value="close">Close</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/static/vendor/leaflet/leaflet.js"></script>
+<script src="/static/vendor/leaflet/leaflet.markercluster.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
