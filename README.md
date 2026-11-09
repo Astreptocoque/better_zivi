@@ -42,8 +42,8 @@ uv run zivi search "alpage" --near Lausanne --radius 40 --housing
 
 Every filter shows how many results each choice would give. All results, not just the
 current page, are drawn on the map, coloured by sector; when zoomed out, nearby assignments
-are grouped into pie-chart bubbles split by sector. Click a sector in the map legend to
-filter on it.
+are grouped into pie-chart bubbles split by sector. The sector filter shows each sector's
+colour.
 
 Click the star ☆ on any assignment (list, map popup or detail panel) to mark it as a
 favourite. **Favoris** in the top bar then shows only your favourites: the list, the map and

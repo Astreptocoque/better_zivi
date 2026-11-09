@@ -184,7 +184,6 @@ async function runSearchNow() {
   $("#more").hidden = res.items.length >= res.total;
   renderEmpty(res);
   renderFacets(res.facets || {});
-  renderLegend(res.facets?.sector || []);
   drawPoints(res.points || []);
   setFavCount(res.favorites);
   $("#mapInfo").textContent = plural(res.points.length, "lieu sur la carte", "lieux sur la carte") +
@@ -278,14 +277,6 @@ function renderChecks(field, counts, label, title) {
   const swatch = (k) => (field === "sector" ? `<i class="swatch" style="--c:${sectorColor(sectorCode(k))}"></i>` : "");
   el.innerHTML = head + all.map(([k, n]) => `<label class="${n ? "" : "zero"}"><input type="checkbox" value="${esc(k)}" ${sel.has(k) ? "checked" : ""}>
     ${swatch(k)}<span>${esc(label(k))}</span><span class="n">${n}</span></label>`).join("");
-}
-/* Map legend: the sectors present in the current results; a click filters on that sector. */
-function renderLegend(counts) {
-  const el = $("#sectorLegend");
-  const rows = [...counts].sort(([a], [b]) => (+sectorCode(a) || 99) - (+sectorCode(b) || 99));
-  el.hidden = !rows.length;
-  el.innerHTML = rows.map(([k, n]) => `<button type="button" data-sector="${esc(k)}" aria-pressed="${S.sector.includes(k)}"
-    title="${esc(k)}"><i class="swatch" style="--c:${sectorColor(sectorCode(k))}"></i><span>${esc(sectorName(k))}</span><small>${n}</small></button>`).join("");
 }
 document.addEventListener("click", (e) => {
   const b = e.target.closest(".tri button, .multi button");
@@ -384,12 +375,6 @@ function resetAll() {
   S = Object.assign(blank(), keep); bindInputs(); runSearchNow();
 }
 $("#resetBtn").addEventListener("click", resetAll);
-$("#sectorLegend").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-sector]"); if (!b) return;
-  const k = b.dataset.sector;
-  S.sector = S.sector.includes(k) ? S.sector.filter((x) => x !== k) : [...S.sector, k];
-  runSearch();
-});
 
 /* ------------------------------------------------------------------ favourites */
 function favBtn(id) {
