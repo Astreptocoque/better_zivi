@@ -49,7 +49,8 @@ colour.
 values that at most 5 % of all assignments share, such as abroad, a 1-week minimum, night
 work or a rare type of task. Each result shows its rare traits with their share; the
 detail panel lists them under *Ce qui la rend rare*. Click the button again to go back to
-the previous sort.
+the previous sort. Click a rare trait to show every assignment that shares it; click several
+to combine them. The chosen traits sit on top of the list, each with a × to remove it.
 
 Click the star ☆ on any assignment (list, map popup or detail panel) to mark it as a
 favourite. **Favoris** in the top bar then shows only your favourites: the list, the map and

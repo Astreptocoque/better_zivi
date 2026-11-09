@@ -141,11 +141,12 @@ h3 { font-size: 1rem; margin: 0 0 .5rem; display: flex; align-items: center; jus
 
 /* ---- results */
 .results { padding: .8rem 1rem; border-right: 1px solid var(--line); }
-.results-head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: .4rem; }
-#count { margin: 0; font-size: 1.05rem; }
+/* one row: count (takes the free space) · ✨ Raretés · Trier [menu], all centred vertically */
+.results-head { display: flex; align-items: center; gap: .5rem; margin-bottom: .4rem; min-height: 2.2rem; }
+#count { margin: 0; font-size: 1.05rem; flex: 1; min-width: 0; line-height: 1.25; }
 #count b { font-size: 1.25rem; }
-.sort { font-size: .88rem; color: var(--slate); }
-.sort select { padding: .25rem .3rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+.sort { font-size: .88rem; color: var(--slate); display: flex; align-items: center; gap: .35rem; white-space: nowrap; flex-shrink: 0; }
+.sort select { max-width: 10.5rem; height: 2rem; padding: .25rem .3rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
 #warnings p { background: #FFF6E0; color: #5C4300; border-radius: 6px; padding: .5rem .7rem; font-size: .9rem; margin: .4rem 0; }
 @media (prefers-color-scheme: dark) { #warnings p { background: #3A2F10; color: #F4DC9C; } }
 .list { list-style: none; margin: 0; padding: 0; }
@@ -195,19 +196,35 @@ h3 { font-size: 1rem; margin: 0 0 .5rem; display: flex; align-items: center; jus
 .facet .swatch { margin-right: .1rem; }
 .sec { display: inline-flex; align-items: center; gap: .3rem; font-size: .8rem; color: var(--slate); }
 .sec::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
-.magic { margin-left: auto; padding: .3rem .6rem; font-size: .88rem; }
+.magic { padding: 0 .6rem; height: 2rem; font-size: .88rem; flex-shrink: 0; display: inline-flex; align-items: center; }
 .magic[aria-pressed=true] { background: #F3EBFF; border-color: #8A5CD6; color: #4B2A8A; font-weight: 700; }
 @media (prefers-color-scheme: dark) { .magic[aria-pressed=true] { background: #2E2245; border-color: #A784E6; color: #E4D6FF; } }
 .rare { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .45rem; }
 .rare-chip {
-  display: inline-block; font-size: .8rem; line-height: 1.35;
+  display: inline-block; font-size: .8rem; line-height: 1.35; text-align: left;
   padding: .12rem .5rem; border-radius: 999px; background: #F3EBFF; color: #3F2475; border: 1px solid #DCCBFA;
 }
+button.rare-chip { cursor: pointer; }
+button.rare-chip:hover { border-color: #8A5CD6; }
+.rare-chip.on { background: #6A3FC2; border-color: #6A3FC2; color: #fff; }
 .rare-chip small { color: #6B4FA3; }
+.rare-chip.on small { color: #E4D6FF; }
 .rare-more { font-size: .8rem; color: var(--slate); align-self: center; }
+.rare-chip .x {
+  border: 0; background: rgba(255,255,255,.22); color: inherit; cursor: pointer; border-radius: 50%;
+  width: 1.15rem; height: 1.15rem; line-height: 1; padding: 0; margin: 0 -.3rem 0 .35rem; font-size: .95rem;
+}
+.rare-chip .x:hover { background: rgba(255,255,255,.4); }
+.trait-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin: .1rem 0 .5rem;
+  padding: .5rem; border-radius: 8px; background: #F7F2FF; border: 1px solid #E4D8FB;
+}
+.trait-bar .link { font-size: .82rem; margin-left: .2rem; }
 @media (prefers-color-scheme: dark) {
   .rare-chip { background: #2E2245; color: #E4D6FF; border-color: #4A3870; }
   .rare-chip small { color: #BFA8EC; }
+  .rare-chip.on { background: #7B52D1; border-color: #7B52D1; color: #fff; }
+  .trait-bar { background: #221A33; border-color: #3A2D57; }
 }
 .pop-actions { display: flex; align-items: center; gap: .4rem; }
 .leaflet-popup-content { font-family: inherit; font-size: .92rem; }

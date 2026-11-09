@@ -51,6 +51,7 @@ const blank = () => ({
   min_weeks_min: "", min_weeks_max: "", hours_min: "", hours_max: "",
   task_areas: [], task_areas_mode: "any", canton: [], language: [], sector: [], work_model: [],
   favorites_only: false,
+  traits: [], // rare traits clicked in the list: [{ field, value, label }]
 });
 let S = Object.assign(blank(), store.get("zivi.state", {}));
 let lastResult = null;
@@ -68,6 +69,7 @@ function query(extra = {}) {
     task_areas: S.task_areas, task_areas_mode: S.task_areas_mode,
     canton: S.canton, language: S.language, sector: S.sector, work_model: S.work_model,
     favorites_only: S.favorites_only,
+    traits: S.traits.map(({ field, value }) => ({ field, value })),
     limit: PAGE, offset: 0,
   };
   const p = S.period;
@@ -179,6 +181,7 @@ async function runSearchNow() {
   if (my !== seq) return; // a newer search started
   lastResult = res;
   renderCount(res);
+  renderTraitBar();
   showWarnings(res.warnings || []);
   $("#list").innerHTML = res.items.map(itemHtml).join("");
   $("#more").hidden = res.items.length >= res.total;
@@ -237,7 +240,8 @@ function itemHtml(it) {
   const dist = it.distance_km != null ? `<span class="dist">${it.distance_km} km</span>` : "";
   const snip = it.snippet ? `<p class="snip">${sanitizeSnippet(it.snippet)}</p>` : "";
   const sec = it.sector ? `<span class="sec" style="--c:${sectorColor(sectorCode(it.sector))}">${esc(sectorName(it.sector))}</span>` : "";
-  const rare = S.sort === "rarity" && it.rare?.length ? `<div class="rare">${rareChips(it.rare, 4)}</div>` : "";
+  const showRare = (S.sort === "rarity" || S.traits.length) && it.rare?.length;
+  const rare = showRare ? `<div class="rare">${rareChips(it.rare, 4)}</div>` : "";
   return `<li class="item" data-id="${it.id}" tabindex="0">${favBtn(it.id)}${dist}
     <h4>${esc(it.title)}</h4>${sec}
     <div class="who">${esc(it.employer)} · ${esc(it.place || "")}</div>
@@ -245,14 +249,51 @@ function itemHtml(it) {
     <div class="facts">${(it.task_areas || []).map(esc).join(", ")}</div>${rare}${snip}</li>`;
 }
 /* "Durée minimale : 1 semaine · 0,3 %" — the rarest traits first, as given by the server */
+/* Each chip is a button: a click shows every assignment sharing that rare value. */
+const pct = (s) => (s < 0.001 ? "< 0,1 %" : `${(s * 100).toLocaleString("fr-CH", { maximumFractionDigits: s < 0.01 ? 1 : 0 })} %`);
+const traitIndex = (field, value) => S.traits.findIndex((t) => t.field === field && t.value === String(value));
 function rareChips(rare, max = Infinity) {
-  const pct = (s) => (s < 0.001 ? "< 0,1 %" : `${(s * 100).toLocaleString("fr-CH", { maximumFractionDigits: s < 0.01 ? 1 : 0 })} %`);
-  const chips = rare.slice(0, max).map((r) => `<span class="rare-chip" title="${esc(
-    `${plural(r.count, "affectation", "affectations")} sur l’ensemble (${pct(r.share)}) ont cette caractéristique`)}">
-    ✨ ${esc(r.label)} : <b>${esc(r.value)}</b> <small>${pct(r.share)}</small></span>`);
+  // the traits already selected come first, so they are never hidden behind "+N"
+  const sorted = [...rare].sort((a, b) => (traitIndex(b.field, b.value) >= 0) - (traitIndex(a.field, a.value) >= 0));
+  const chips = sorted.slice(0, max).map((r) => {
+    const on = traitIndex(r.field, r.value) >= 0;
+    const tip = `${plural(r.count, "affectation", "affectations")} sur l’ensemble (${pct(r.share)}) ont cette caractéristique — ` +
+      (on ? "cliquer pour retirer ce filtre" : "cliquer pour les afficher");
+    return `<button type="button" class="rare-chip${on ? " on" : ""}" aria-pressed="${on}" title="${esc(tip)}"
+      data-trait-field="${esc(r.field)}" data-trait-value="${esc(r.value)}" data-trait-label="${esc(r.label)}" data-trait-share="${r.share}">
+      ✨ ${esc(r.label)} : <b>${esc(r.value)}</b> <small>${pct(r.share)}</small></button>`;
+  });
   const more = rare.length > max ? `<span class="rare-more">+${rare.length - max}</span>` : "";
   return chips.join("") + more;
 }
+function toggleTrait(t) {
+  const i = traitIndex(t.field, t.value);
+  if (i >= 0) S.traits.splice(i, 1); else S.traits.push(t);
+  runSearchNow();
+}
+/* The selected rare traits, on top of the list; × removes one. */
+function renderTraitBar() {
+  const bar = $("#traitBar");
+  bar.hidden = !S.traits.length;
+  bar.innerHTML = S.traits.map((t, i) => `<span class="rare-chip on">✨ ${esc(t.label)} : <b>${esc(t.value)}</b>${
+    t.share != null ? ` <small>${pct(t.share)}</small>` : ""}<button type="button" class="x" data-untrait="${i}"
+      aria-label="Retirer ${esc(t.label)} : ${esc(t.value)}" title="Retirer ce filtre">×</button></span>`).join("") +
+    (S.traits.length > 1 ? '<button type="button" class="link" data-untrait="all">Tout retirer</button>' : "");
+}
+$("#traitBar").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-untrait]"); if (!b) return;
+  if (b.dataset.untrait === "all") S.traits = []; else S.traits.splice(+b.dataset.untrait, 1);
+  runSearchNow();
+});
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-trait-field]");
+  if (!b) return;
+  e.stopPropagation(); // capture phase: the chip must not also open the entry
+  const d = b.dataset;
+  if (b.closest("#drawer")) { closeDrawer(); showPane("results"); }
+  toggleTrait({ field: d.traitField, value: d.traitValue, label: d.traitLabel, share: +d.traitShare });
+  $("#results").scrollTop = 0;
+}, true);
 function sanitizeSnippet(s) { return esc(s).replace(/&lt;mark&gt;/g, "<mark>").replace(/&lt;\/mark&gt;/g, "</mark>"); }
 function fmtDate(iso) { const [y, m, d] = iso.split("-"); return `${d}.${m}.${y}`; }
 

@@ -202,7 +202,7 @@ class Engine:
     def load(self) -> None:
         with self.lock:
             self.rows, self.task_areas, self.weeks, self.locations = {}, {}, {}, {}
-            self.rare, self.rarity = {}, {}
+            self.rare, self.rarity, self.trait_keys = {}, {}, {}
             self.report: dict = {}
             if not Path(self.db_path).exists():
                 return
@@ -241,6 +241,7 @@ class Engine:
         and among equally rare entries, the one with more rare traits comes first.
         """
         traits = {i: rarity_traits(r, self.task_areas.get(i, [])) for i, r in self.rows.items()}
+        self.trait_keys = {i: {(k, v) for k, _l, v in ts} for i, ts in traits.items()}
         counts: dict[tuple[str, Any], int] = defaultdict(int)
         for ts in traits.values():
             for key, _label, value in set(ts):
@@ -311,6 +312,12 @@ class Engine:
         if q.get("favorites_only"):
             favs = set(self.favorites)
             f["favorites"] = lambda i, r: i in favs
+
+        # rare traits clicked in the list: {"field": "night", "value": "Oui"}; all must match
+        wanted = {(t.get("field"), str(t.get("value"))) for t in (q.get("traits") or [])
+                  if isinstance(t, dict) and t.get("field")}
+        if wanted:
+            f["traits"] = lambda i, r: wanted <= self.trait_keys.get(i, set())
 
         def multi(field: str, key: str | None = None):
             vals = q.get(key or field)

@@ -317,3 +317,18 @@ def test_ai_provider_and_model_survive_restart(store, monkeypatch):
     # an explicit environment variable still wins
     monkeypatch.setenv("ZIVI_AI_MODEL", "text-embedding-3-small")
     assert Engine(db).ai.model != "nomic-embed-text"
+
+
+def test_filter_by_rare_traits(store):
+    e = Engine(store[0])
+    every = e.search({})["total"]
+    # any value of an assignment can be asked for; all asked values must match
+    one = next(iter(e.rows))
+    key = next(iter(e.trait_keys[one]))
+    res = e.search({"traits": [{"field": key[0], "value": key[1]}]})
+    assert 1 <= res["total"] <= every
+    assert all(key in e.trait_keys[it["id"]] for it in res["items"])
+    both = e.search({"traits": [{"field": key[0], "value": key[1]},
+                                {"field": "abroad", "value": "Oui"}]})
+    assert {it["id"] for it in both["items"]} <= {it["id"] for it in res["items"]}
+    assert e.search({"traits": [{"field": "night", "value": "jamais"}]})["total"] == 0
