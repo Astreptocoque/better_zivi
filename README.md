@@ -41,7 +41,14 @@ uv run zivi search "alpage" --near Lausanne --radius 40 --housing
 | Canton, language, sector, working-hours model | Language is guessed from the description (the export has no language field). |
 
 Every filter shows how many results each choice would give. All results, not just the
-current page, are drawn on the map (clustered when zoomed out). **Export CSV** downloads the
+current page, are drawn on the map, coloured by sector; when zoomed out, nearby assignments
+are grouped into pie-chart bubbles split by sector. Click a sector in the map legend to
+filter on it.
+
+Click the star ☆ on any assignment (list, map popup or detail panel) to mark it as a
+favourite. **Favoris** in the top bar then shows only your favourites: the list, the map and
+the filter counts are all limited to them. Favourites are stored in `data/favorites.json`
+and survive re-imports. **Export CSV** downloads the
 current results with contact details (opens directly in Excel).
 
 ## AI search (optional)

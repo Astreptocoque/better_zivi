@@ -397,13 +397,13 @@ def convert(json_path: str | Path, db_path: str | Path, *, geocoder_factory=None
     """
     say = progress or (lambda msg, frac: print(f"[{frac:5.0%}] {msg}"))
     json_path, db_path = Path(json_path), Path(db_path)
-    say("Reading JSON", 0.0)
+    say("Lecture du JSON", 0.0)
     with json_path.open(encoding="utf-8-sig") as fh:
         data = json.load(fh)
     meta = data.get("meta", {}) if isinstance(data, dict) else {}
     records = list(iter_records(data))
     if not records:
-        raise ValueError("No assignments found in this JSON file.")
+        raise ValueError("Aucune affectation trouvée dans ce fichier JSON.")
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = db_path.with_suffix(".building")
@@ -438,9 +438,9 @@ def convert(json_path: str | Path, db_path: str | Path, *, geocoder_factory=None
             unknown.update(k for k in det if k not in KNOWN_DETAIL_KEYS)
             missing.update(k for k in KNOWN_DETAIL_KEYS - {"merkliste"} if k not in det)
         if i % 500 == 0:
-            say(f"Parsing records {i}/{len(records)}", 0.05 + 0.15 * i / len(records))
+            say(f"Analyse des fiches {i}/{len(records)}", 0.05 + 0.15 * i / len(records))
 
-    say(f"Writing {len(normalised)} assignments", 0.2)
+    say(f"Écriture de {len(normalised)} affectations", 0.2)
     cols = list(normalised[0]["row"].keys())
     db.executemany(f"INSERT INTO assignments({','.join(cols)}) VALUES "
                    f"({','.join('?' * len(cols))})",
@@ -489,11 +489,11 @@ def convert(json_path: str | Path, db_path: str | Path, *, geocoder_factory=None
                    (",".join(sorted(set(cantons))) or None, int(abroad), row["id"]))
         if i % 100 == 0:
             db.commit()
-            say(f"Geocoding {i}/{total}", 0.25 + 0.65 * i / total)
+            say(f"Géolocalisation {i}/{total}", 0.25 + 0.65 * i / total)
     db.executemany("INSERT INTO locations VALUES (?,?,?,?,?,?,?,?,?,?)", loc_rows)
 
     # ---- full-text index
-    say("Building full-text index", 0.92)
+    say("Construction de l'index plein texte", 0.92)
     ta_map: dict[int, list[str]] = {}
     for n in normalised:
         ta_map[n["row"]["id"]] = [l or c for c, l in n["task_areas"]]
@@ -529,7 +529,7 @@ def convert(json_path: str | Path, db_path: str | Path, *, geocoder_factory=None
         shutil.copyfile(db_path, backup)
         db_path.unlink()
     tmp.rename(db_path)
-    say(f"Done: {report['assignments']} assignments, {located} located", 1.0)
+    say(f"Terminé : {report['assignments']} affectations, {located} localisées", 1.0)
     return report
 
 

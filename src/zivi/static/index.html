@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Zivi search</title>
+<title>Recherche Zivi</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23D52B1E'/><path d='M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z' fill='white'/></svg>">
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="/static/vendor/leaflet/MarkerCluster.css">
@@ -11,91 +11,92 @@
 </head>
 <body>
 <header class="bar">
-  <a class="brand" href="/" aria-label="Zivi search home">
+  <a class="brand" href="/" aria-label="Accueil Recherche Zivi">
     <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="6"/><path d="M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z"/></svg>
-    <span>Zivi search</span>
+    <span>Recherche Zivi</span>
   </a>
   <form class="search" id="searchForm" role="search">
     <input id="q" type="search" autocomplete="off" spellcheck="false"
-           placeholder='Search tasks, employers, places — "exact phrase", -exclude, a OR b'>
-    <div class="seg" role="radiogroup" aria-label="Search mode">
-      <label><input type="radio" name="mode" value="keyword" checked><span>Keywords</span></label>
-      <label title="Meaning-based search, needs an AI token"><input type="radio" name="mode" value="semantic"><span>AI</span></label>
-      <label title="Keywords and AI combined"><input type="radio" name="mode" value="hybrid"><span>Both</span></label>
+           placeholder='Tâches, établissements, lieux — "expression exacte", -exclure, a OR b'>
+    <div class="seg" role="radiogroup" aria-label="Mode de recherche">
+      <label><input type="radio" name="mode" value="keyword" checked><span>Mots-clés</span></label>
+      <label title="Recherche par le sens, nécessite un jeton IA"><input type="radio" name="mode" value="semantic"><span>IA</span></label>
+      <label title="Mots-clés et IA combinés"><input type="radio" name="mode" value="hybrid"><span>Les deux</span></label>
     </div>
   </form>
   <div class="actions">
-    <label class="btn" for="fileInput" title="Load a ZiviConnect JSON export">Load JSON</label>
+    <button class="btn fav-toggle" id="favOnly" type="button" aria-pressed="false" title="Afficher uniquement les favoris"><span class="star" aria-hidden="true">★</span> Favoris <small id="favCount">0</small></button>
+    <label class="btn" for="fileInput" title="Charger un export JSON de ZiviConnect">Charger JSON</label>
     <input id="fileInput" type="file" accept=".json,application/json" hidden>
-    <button class="btn" id="aiBtn" type="button">AI settings</button>
-    <button class="btn" id="exportBtn" type="button" title="Download the current results as CSV">Export CSV</button>
+    <button class="btn" id="aiBtn" type="button">Réglages IA</button>
+    <button class="btn" id="exportBtn" type="button" title="Télécharger les résultats actuels en CSV">Exporter CSV</button>
   </div>
 </header>
 
-<nav class="tabs" aria-label="Panels">
-  <button data-pane="filters">Filters</button>
-  <button data-pane="results" class="on">Results</button>
-  <button data-pane="map">Map</button>
+<nav class="tabs" aria-label="Panneaux">
+  <button data-pane="filters">Filtres</button>
+  <button data-pane="results" class="on">Résultats</button>
+  <button data-pane="map">Carte</button>
 </nav>
 
 <main class="layout">
-  <aside class="pane filters" id="filters" aria-label="Filters">
+  <aside class="pane filters" id="filters" aria-label="Filtres">
     <div class="filters-head">
-      <strong>Filters</strong>
-      <button class="link" id="resetBtn" type="button">Clear all</button>
+      <strong>Filtres</strong>
+      <button class="link" id="resetBtn" type="button">Tout effacer</button>
     </div>
 
     <section class="group" aria-labelledby="h-period">
-      <h3 id="h-period">Period</h3>
+      <h3 id="h-period">Période</h3>
       <div class="row2">
-        <label>From<input type="date" id="pFrom"></label>
-        <label>To<input type="date" id="pTo"></label>
+        <label>Du<input type="date" id="pFrom"></label>
+        <label>Au<input type="date" id="pTo"></label>
       </div>
-      <label class="inline">Starting in this period, for at least
-        <input type="number" id="pDur" min="1" max="52" placeholder="–" class="num"> weeks in a row</label>
-      <label class="check"><input type="checkbox" id="pAll"> Available every week of the period</label>
+      <label class="inline">Début dans cette période, pour au moins
+        <input type="number" id="pDur" min="1" max="52" placeholder="–" class="num"> semaines consécutives</label>
+      <label class="check"><input type="checkbox" id="pAll"> Disponible chaque semaine de la période</label>
     </section>
 
     <section class="group" aria-labelledby="h-place">
-      <h3 id="h-place">Around places</h3>
+      <h3 id="h-place">Autour de lieux</h3>
       <div class="place-input">
-        <input id="placeQ" type="text" placeholder="Town or postcode, e.g. Lausanne or 3800" autocomplete="off">
+        <input id="placeQ" type="text" placeholder="Localité ou NPA, p. ex. Lausanne ou 3800" autocomplete="off">
         <ul id="placeSug" class="suggest" role="listbox" hidden></ul>
       </div>
-      <label class="inline">Radius <input type="range" id="radius" min="1" max="150" value="25">
+      <label class="inline">Rayon <input type="range" id="radius" min="1" max="150" value="25">
         <output id="radiusOut">25 km</output></label>
       <ul id="centers" class="chips"></ul>
-      <label class="check"><input type="checkbox" id="clickAdd"> Add a place by clicking the map</label>
-      <label class="check"><input type="checkbox" id="bboxOnly"> Only what is visible on the map</label>
+      <label class="check"><input type="checkbox" id="clickAdd"> Ajouter un lieu en cliquant sur la carte</label>
+      <label class="check"><input type="checkbox" id="bboxOnly"> Seulement ce qui est visible sur la carte</label>
     </section>
 
     <section class="group" aria-labelledby="h-cond">
       <h3 id="h-cond">Conditions</h3>
-      <div class="tri" data-field="housing"><span>Housing offered</span></div>
-      <div class="tri" data-field="meals"><span>Meals offered</span></div>
-      <div class="tri" data-field="reputation_check"><span>Reputation check</span></div>
-      <div class="tri" data-field="priority_program"><span>Priority programme</span></div>
-      <div class="tri" data-field="abroad"><span>Abroad</span></div>
-      <div class="multi" data-field="weekend"><span>Weekend work</span><div class="opts"></div></div>
-      <div class="multi" data-field="night"><span>Night work</span><div class="opts"></div></div>
-      <label class="check"><input type="checkbox" id="noCourse"> No civil-service course required</label>
+      <div class="tri" data-field="housing"><span>Logement offert</span></div>
+      <div class="tri" data-field="meals"><span>Repas offerts</span></div>
+      <div class="tri" data-field="reputation_check"><span>Contrôle de réputation</span></div>
+      <div class="tri" data-field="priority_program"><span>Programme prioritaire</span></div>
+      <div class="tri" data-field="abroad"><span>À l’étranger</span></div>
+      <div class="multi" data-field="weekend"><span>Travail le week-end</span><div class="opts"></div></div>
+      <div class="multi" data-field="night"><span>Travail de nuit</span><div class="opts"></div></div>
+      <label class="check"><input type="checkbox" id="noCourse"> Aucun cours du service civil requis</label>
     </section>
 
     <section class="group" aria-labelledby="h-dur">
-      <h3 id="h-dur">Duration and hours</h3>
+      <h3 id="h-dur">Durée et horaires</h3>
       <div class="row2">
-        <label>Min. duration from<input type="number" id="mwMin" min="1" max="52" placeholder="weeks"></label>
-        <label>to<input type="number" id="mwMax" min="1" max="52" placeholder="weeks"></label>
+        <label>Durée min. de<input type="number" id="mwMin" min="1" max="52" placeholder="semaines"></label>
+        <label>à<input type="number" id="mwMax" min="1" max="52" placeholder="semaines"></label>
       </div>
       <div class="row2">
-        <label>Hours/week from<input type="number" id="hMin" min="0" max="60"></label>
-        <label>to<input type="number" id="hMax" min="0" max="60"></label>
+        <label>Heures/semaine de<input type="number" id="hMin" min="0" max="60"></label>
+        <label>à<input type="number" id="hMax" min="0" max="60"></label>
       </div>
     </section>
 
     <section class="group" aria-labelledby="h-tasks">
-      <h3 id="h-tasks">Types of tasks
-        <span class="mini-seg"><label><input type="radio" name="taMode" value="any" checked>any</label><label><input type="radio" name="taMode" value="all">all</label></span>
+      <h3 id="h-tasks">Types de tâches
+        <span class="mini-seg"><label><input type="radio" name="taMode" value="any" checked>au moins un</label><label><input type="radio" name="taMode" value="all">tous</label></span>
       </h3>
       <div class="facet" data-field="task_areas"></div>
     </section>
@@ -106,88 +107,89 @@
     </section>
 
     <section class="group" aria-labelledby="h-more">
-      <h3 id="h-more">More</h3>
-      <p class="hint">Language is guessed from the description text.</p>
+      <h3 id="h-more">Plus</h3>
+      <p class="hint">La langue est déduite du texte de la description.</p>
       <div class="facet" data-field="language"></div>
       <div class="facet" data-field="sector"></div>
       <div class="facet" data-field="work_model"></div>
     </section>
   </aside>
 
-  <section class="pane results" id="results" aria-label="Results">
+  <section class="pane results" id="results" aria-label="Résultats">
     <div class="results-head">
-      <p id="count" aria-live="polite">Loading…</p>
-      <label class="sort">Sort
+      <p id="count" aria-live="polite">Chargement…</p>
+      <label class="sort">Trier
         <select id="sort">
-          <option value="">Best match</option>
+          <option value="">Pertinence</option>
           <option value="distance">Distance</option>
-          <option value="first_week">Earliest start</option>
-          <option value="min_weeks">Shortest minimum duration</option>
-          <option value="number">Newest</option>
-          <option value="title">Title</option>
+          <option value="first_week">Début le plus tôt</option>
+          <option value="min_weeks">Durée minimale la plus courte</option>
+          <option value="number">Plus récentes</option>
+          <option value="title">Titre</option>
         </select>
       </label>
     </div>
     <div id="warnings"></div>
     <ol id="list" class="list"></ol>
-    <button id="more" class="btn wide" hidden>Show more</button>
+    <button id="more" class="btn wide" hidden>Afficher plus</button>
     <div id="empty" class="empty" hidden></div>
   </section>
 
-  <section class="pane mapwrap" id="mapPane" aria-label="Map">
+  <section class="pane mapwrap" id="mapPane" aria-label="Carte">
     <div id="map"></div>
     <div class="map-legend" id="mapInfo"></div>
+    <div class="sector-legend" id="sectorLegend" aria-label="Légende des domaines"></div>
   </section>
 </main>
 
 <div class="drawer" id="drawer" hidden>
   <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="dTitle">
-    <button class="close" id="drawerClose" aria-label="Close">×</button>
+    <button class="close" id="drawerClose" aria-label="Fermer">×</button>
     <div id="drawerBody"></div>
   </div>
 </div>
 
 <dialog id="importDlg">
-  <h2>Loading data</h2>
-  <p id="impMsg">Uploading…</p>
+  <h2>Chargement des données</h2>
+  <p id="impMsg">Envoi…</p>
   <div class="progress"><div id="impBar"></div></div>
   <pre id="impReport" hidden></pre>
-  <form method="dialog"><button class="btn primary" id="impClose" disabled>Close</button></form>
+  <form method="dialog"><button class="btn primary" id="impClose" disabled>Fermer</button></form>
 </dialog>
 
 <dialog id="aiDlg">
   <form method="dialog" id="aiForm">
-    <h2>AI search</h2>
-    <p class="hint">Finds assignments by meaning ("working with animals outdoors") using text
-      embeddings. Works with any OpenAI-compatible service, or a local Ollama without a token.
-      The token stays in the local server's memory and is never written to disk.</p>
-    <label>Provider
+    <h2>Recherche IA</h2>
+    <p class="hint">Trouve des affectations par le sens (« travailler avec des animaux en plein air ») grâce
+      aux embeddings de texte. Fonctionne avec tout service compatible OpenAI, ou un Ollama local sans jeton.
+      Le jeton reste dans la mémoire du serveur local et n’est jamais écrit sur le disque.</p>
+    <label>Fournisseur
       <select id="aiPreset">
         <option value="openai">OpenAI — text-embedding-3-small</option>
         <option value="mistral">Mistral — mistral-embed</option>
-        <option value="ollama">Ollama on this computer — nomic-embed-text</option>
-        <option value="custom">Custom</option>
+        <option value="ollama">Ollama sur cet ordinateur — nomic-embed-text</option>
+        <option value="custom">Personnalisé</option>
       </select>
     </label>
-    <label>API base URL<input id="aiBase" type="url" required></label>
-    <label>Model<input id="aiModel" type="text" required></label>
-    <label>Token<input id="aiKey" type="password" autocomplete="off" placeholder="sk-…"></label>
-    <label class="check"><input type="checkbox" id="aiRemember"> Remember the token in this browser</label>
-    <label>Results kept by AI search
+    <label>URL de base de l’API<input id="aiBase" type="url" required></label>
+    <label>Modèle<input id="aiModel" type="text" required></label>
+    <label>Jeton<input id="aiKey" type="password" autocomplete="off" placeholder="sk-…"></label>
+    <label class="check"><input type="checkbox" id="aiRemember"> Mémoriser le jeton dans ce navigateur</label>
+    <label>Résultats retenus par la recherche IA
       <select id="aiTopK">
-        <option value="50">The 50 closest</option>
-        <option value="100">The 100 closest</option>
-        <option value="200" selected>The 200 closest</option>
-        <option value="500">The 500 closest</option>
-        <option value="0">All, ranked by closeness</option>
+        <option value="50">Les 50 plus proches</option>
+        <option value="100">Les 100 plus proches</option>
+        <option value="200" selected>Les 200 plus proches</option>
+        <option value="500">Les 500 plus proches</option>
+        <option value="0">Toutes, classées par proximité</option>
       </select>
     </label>
     <p id="aiStatus" class="status"></p>
     <div class="progress" id="aiProg" hidden><div id="aiBar"></div></div>
     <div class="dlg-actions">
-      <button class="btn" type="button" id="aiTest">Test connection</button>
-      <button class="btn primary" type="button" id="aiBuild">Build AI index</button>
-      <button class="btn" value="close">Close</button>
+      <button class="btn" type="button" id="aiTest">Tester la connexion</button>
+      <button class="btn primary" type="button" id="aiBuild">Construire l’index IA</button>
+      <button class="btn" value="close">Fermer</button>
     </div>
   </form>
 </dialog>

@@ -58,7 +58,7 @@ class Embedder:
         r = httpx.post(url, headers=headers, timeout=120,
                        json={"model": self.s.model, "input": texts})
         if r.status_code >= 400:
-            raise RuntimeError(f"Embedding API error {r.status_code}: {r.text[:300]}")
+            raise RuntimeError(f"Erreur de l'API d'embeddings {r.status_code} : {r.text[:300]}")
         data = sorted(r.json()["data"], key=lambda d: d.get("index", 0))
         vecs = np.array([d["embedding"] for d in data], dtype=np.float32)
         norms = np.linalg.norm(vecs, axis=1, keepdims=True)
@@ -134,7 +134,7 @@ class SemanticIndex:
         q = q / max(float(np.linalg.norm(q)), 1e-12)
         with self._lock:
             if self.mat.shape[1] != q.shape[0]:
-                raise RuntimeError(f"the index was built with another model ({self.model}); "
-                                   "rebuild it in AI settings")
+                raise RuntimeError(f"l'index a été construit avec un autre modèle ({self.model}) ; "
+                                   "reconstruisez-le dans Réglages IA")
             sims = self.mat @ q
             return dict(zip(self.ids.tolist(), sims.tolist()))

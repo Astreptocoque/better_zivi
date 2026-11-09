@@ -211,3 +211,27 @@ def test_semantic_keeps_only_top_k(store, monkeypatch):
     e.semantic.build(str(db), e.ai_texts(), e.ai)
     assert e.search({"text": "x", "text_mode": "semantic", "ai_top_k": 2})["total"] == 2
     assert e.search({"text": "x", "text_mode": "semantic", "ai_top_k": 0})["total"] == 5
+
+
+def test_favorites_filter_facets_and_persistence(store):
+    db, _ = store
+    e = Engine(db)
+    all_ids = sorted(e.rows)
+    a, b = all_ids[0], all_ids[1]
+    assert e.set_favorite(a, True) and e.set_favorite(b, True)
+    assert not e.set_favorite(b, False)
+    res = e.search({"favorites_only": True})
+    assert [it["id"] for it in res["items"]] == [a] and res["favorites"] == 1
+    assert res["items"][0]["favorite"] is True
+    # facets only count favourites
+    assert sum(n for _, n in res["facets"]["housing"]) == 1
+    # points carry the sector code and the favourite flag
+    assert all(p[7] for p in res["points"])
+    # favourites survive a reload of the engine
+    assert Engine(db).favorites == {a}
+
+
+def test_sector_code():
+    from zivi.search import sector_code
+    assert sector_code("2 Social") == "2"
+    assert sector_code(None) is None

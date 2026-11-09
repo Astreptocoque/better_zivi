@@ -7,6 +7,7 @@ while ignoring that field's own filter, so multi-select filters behave as expect
 
 from __future__ import annotations
 
+import json
 import math
 import re
 import sqlite3
@@ -38,6 +39,12 @@ def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dp, dl = p2 - p1, math.radians(lon2 - lon1)
     a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
     return 2 * r * math.asin(math.sqrt(a))
+
+
+def sector_code(sector: str | None) -> str | None:
+    """'2 Social' -> '2' (the export prefixes every sector label with its code)."""
+    m = re.match(r"\s*(\d+)", sector or "")
+    return m.group(1) if m else (sector or None)
 
 
 def week_ord(iso: str) -> int:
@@ -97,7 +104,27 @@ class Engine:
         self.ai = AISettings()
         self.semantic = SemanticIndex()
         self.rows: dict[int, dict] = {}
+        # favourites live next to the database so a re-import keeps them
+        self.fav_path = Path(self.db_path).with_name("favorites.json")
+        self.favorites: set[int] = set()
+        self._load_favorites()
         self.load()
+
+    # ------------------------------------------------------------------ favourites
+    def _load_favorites(self) -> None:
+        try:
+            self.favorites = {int(i) for i in json.loads(self.fav_path.read_text("utf-8"))}
+        except (OSError, ValueError, TypeError):
+            self.favorites = set()
+
+    def set_favorite(self, i: int, on: bool) -> bool:
+        with self.lock:
+            (self.favorites.add if on else self.favorites.discard)(i)
+            self.fav_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.fav_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(sorted(self.favorites)), "utf-8")
+            tmp.replace(self.fav_path)
+            return i in self.favorites
 
     # ------------------------------------------------------------------ loading
     def connect(self) -> sqlite3.Connection:
@@ -135,7 +162,6 @@ class Engine:
                 self.locations = dict(loc)
                 rep = db.execute("SELECT value FROM meta WHERE key='report'").fetchone()
                 if rep:
-                    import json
                     self.report = json.loads(rep[0])
                 self.semantic.load(db, self.ai.model)
             finally:
@@ -188,6 +214,10 @@ class Engine:
     def _filters(self, q: dict) -> dict[str, Callable[[int, dict], bool]]:
         """Named predicates; each facet is computed without its own predicate."""
         f: dict[str, Callable[[int, dict], bool]] = {}
+
+        if q.get("favorites_only"):
+            favs = set(self.favorites)
+            f["favorites"] = lambda i, r: i in favs
 
         def multi(field: str, key: str | None = None):
             vals = q.get(key or field)
@@ -307,16 +337,17 @@ class Engine:
             kw = self.fts_ids(text)
         if text and mode in ("semantic", "hybrid"):
             if not self.ai.configured:
-                warnings.append("AI search is not configured: add a token in the AI panel. "
-                                "Falling back to keyword search.")
+                warnings.append("La recherche IA n'est pas configurée : ajoutez un jeton dans "
+                                "Réglages IA. Recherche par mots-clés utilisée à la place.")
             elif not self.semantic.ready:
-                warnings.append("The AI index is not built yet: click 'Build AI index'. "
-                                "Falling back to keyword search.")
+                warnings.append("L'index IA n'est pas encore construit : cliquez sur « Construire "
+                                "l'index IA ». Recherche par mots-clés utilisée à la place.")
             else:
                 try:
                     sem = self.semantic.scores(text, self.ai)
                 except Exception as exc:
-                    warnings.append(f"AI search failed ({exc}); keyword search used instead.")
+                    warnings.append(f"La recherche IA a échoué ({exc}) ; recherche par mots-clés "
+                                    "utilisée à la place.")
             if sem is None and kw is None:
                 kw = self.fts_ids(text)
 
@@ -410,6 +441,7 @@ class Engine:
             r = self.rows[i]
             item = {k: r.get(k) for k in SUMMARY_FIELDS}
             item["task_areas"] = self.task_areas.get(i, [])
+            item["favorite"] = i in self.favorites
             item["score"] = round(score[i], 4) if i in score else None
             item["distance_km"] = round(dist[i], 1) if dist.get(i) is not None else None
             item["snippet"] = snips.get(i)
@@ -423,11 +455,13 @@ class Engine:
             for l in self.locations.get(i, []):
                 if l["lat"] is not None:
                     points.append([i, round(l["lat"], 5), round(l["lon"], 5), r["title"],
-                                   r["employer"], l["label"] or r["place"]])
+                                   r["employer"], l["label"] or r["place"],
+                                   sector_code(r.get("sector")), i in self.favorites])
         unlocated = sum(1 for i in matched
                         if not any(l["lat"] is not None for l in self.locations.get(i, [])))
         return {"total": len(matched), "offset": offset, "items": items, "points": points,
-                "unlocated": unlocated, "facets": facets, "sort": sort, "warnings": warnings,
+                "unlocated": unlocated, "facets": facets,
+                "favorites": len(self.favorites & self.rows.keys()), "sort": sort, "warnings": warnings,
                 "mode_used": "hybrid" if (sem is not None and kw is not None)
                 else "semantic" if sem is not None else "keyword" if kw is not None else None}
 
@@ -440,6 +474,7 @@ class Engine:
                 return None
             out = {k: r[k] for k in r.keys() if k != "raw"}
             out["task_areas"] = self.task_areas.get(i, [])
+            out["favorite"] = i in self.favorites
             out["weeks"] = self.weeks.get(i, ([], []))[0]
             out["locations"] = self.locations.get(i, [])
             return out
@@ -454,5 +489,6 @@ class Engine:
                 "first_week": min(all_weeks) if all_weeks else None,
                 "last_week": max(all_weeks) if all_weeks else None,
                 "report": self.report, "ai": self.ai.public(),
+                "favorites": len(self.favorites & set(self.rows)),
                 "ai_index": {"ready": self.semantic.ready, "vectors": len(self.semantic.ids),
                              "model": self.semantic.model, **self.semantic.progress}}

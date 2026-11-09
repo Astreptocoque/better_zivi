@@ -44,15 +44,26 @@ def create_app(db_path: Path = config.DB_PATH) -> FastAPI:
     def search(q: dict = Body(default={})):
         if not engine.loaded:
             return {"total": 0, "items": [], "points": [], "facets": {}, "unlocated": 0,
-                    "warnings": ["No data yet: load a JSON file first."]}
+                    "warnings": ["Aucune donnée : chargez d'abord un fichier JSON."]}
         return engine.search(q)
 
     @app.get("/api/assignment/{aid}")
     def assignment(aid: int):
         d = engine.detail(aid)
         if not d:
-            raise HTTPException(404, "Unknown assignment")
+            raise HTTPException(404, "Affectation inconnue")
         return d
+
+    @app.get("/api/favorites")
+    def favorites():
+        return {"ids": sorted(engine.favorites)}
+
+    @app.post("/api/favorites/{aid}")
+    def set_favorite(aid: int, body: dict = Body(default={})):
+        if aid not in engine.rows:
+            raise HTTPException(404, "Affectation inconnue")
+        on = engine.set_favorite(aid, bool(body.get("favorite", True)))
+        return {"id": aid, "favorite": on, "count": len(engine.favorites & set(engine.rows))}
 
     @app.get("/api/geocode")
     def geocode(q: str):
@@ -79,7 +90,7 @@ def create_app(db_path: Path = config.DB_PATH) -> FastAPI:
         data = "﻿" + buf.getvalue()  # BOM so Excel opens UTF-8 correctly
         return StreamingResponse(iter([data]), media_type="text/csv",
                                  headers={"Content-Disposition":
-                                          "attachment; filename=zivi_results.csv"})
+                                          "attachment; filename=zivi_resultats.csv"})
 
     # ------------------------------------------------------------------ import
     def run_import(path: Path):
@@ -95,7 +106,7 @@ def create_app(db_path: Path = config.DB_PATH) -> FastAPI:
             st["report"] = report
         except Exception as exc:
             st["error"] = str(exc)
-            st["message"] = "Import failed"
+            st["message"] = "Échec de l'import"
         finally:
             st["running"] = False
 
@@ -103,14 +114,14 @@ def create_app(db_path: Path = config.DB_PATH) -> FastAPI:
     async def import_json(file: UploadFile = File(...)):
         st = state["import"]
         if st["running"]:
-            raise HTTPException(409, "An import is already running")
+            raise HTTPException(409, "Un import est déjà en cours")
         uploads = config.DATA_DIR / "uploads"
         uploads.mkdir(parents=True, exist_ok=True)
         name = Path(file.filename or "upload.json").name
         dest = uploads / name
         with dest.open("wb") as fh:
             shutil.copyfileobj(file.file, fh)
-        st.update({"running": True, "message": "Starting", "progress": 0.0, "error": None,
+        st.update({"running": True, "message": "Démarrage", "progress": 0.0, "error": None,
                    "report": None, "started": time.time(), "file": name})
         threading.Thread(target=run_import, args=(dest,), daemon=True).start()
         return {"started": True, "file": name}
@@ -144,7 +155,7 @@ def create_app(db_path: Path = config.DB_PATH) -> FastAPI:
     def ai_test():
         from .semantic import Embedder
         if not engine.ai.configured:
-            raise HTTPException(400, "Set a base URL, model and token first")
+            raise HTTPException(400, "Indiquez d'abord une URL de base, un modèle et un jeton")
         try:
             v = Embedder(engine.ai).embed(["test"])
             return {"ok": True, "dimensions": int(v.shape[1])}
@@ -154,9 +165,9 @@ def create_app(db_path: Path = config.DB_PATH) -> FastAPI:
     @app.post("/api/ai/index")
     def ai_index():
         if not engine.ai.configured:
-            raise HTTPException(400, "Set a base URL, model and token first")
+            raise HTTPException(400, "Indiquez d'abord une URL de base, un modèle et un jeton")
         if engine.semantic.progress.get("running"):
-            raise HTTPException(409, "Already building")
+            raise HTTPException(409, "Construction déjà en cours")
         texts = engine.ai_texts()
         settings = engine.ai
         threading.Thread(target=engine.semantic.build,
