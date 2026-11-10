@@ -1,0 +1,1058 @@
+{
+  "meta": {
+    "source": "ziviconnect.admin.ch",
+    "searchWindow": "2027-08-02 to 2027-12-03",
+    "siteTotal": 5,
+    "records": 5,
+    "collectedAt": "2026-11-09T20:18:44.897Z",
+    "note": "Example: 5 assignments from a ZiviConnect export. Contact persons, e-mails and phone numbers are fictional."
+  },
+  "assignments": [
+    {
+      "id": 25192,
+      "number": 55508,
+      "title": "Unterhalt von Sammlungsgegenständen und Museumsobjekten",
+      "sector": {
+        "code": "3",
+        "de": "3 Kulturgütererhaltung",
+        "fr": "3 Conservation des biens culturels",
+        "it": "3 Conservazione dei beni culturali"
+      },
+      "taskAreas": [
+        {
+          "code": "ARBEIT_IM_FREIEN",
+          "de": "Arbeit im Freien",
+          "fr": "Travail en plein air",
+          "it": "Lavoro ambientale / Lavoro all'aperto"
+        },
+        {
+          "code": "FORSCHUNG/WISSENSCHAFT",
+          "de": "Forschung/Wissenschaft",
+          "fr": "Recherche / travaux scientifiques",
+          "it": "Ricerca / lavori scientifici"
+        },
+        {
+          "code": "HANDWERKLICHE_TAETIGKEIT",
+          "de": "Handwerkliche Tätigkeit / Technischer Dienst",
+          "fr": "Travail manuel / Service technique",
+          "it": "Attività manuali / Servizio tecnico"
+        }
+      ],
+      "place": "Hofstetten BE",
+      "employer": "Freilichtmuseum Ballenberg",
+      "employerId": 3754,
+      "url": "https://ziviconnect.admin.ch/zdp/pflichtenheft/25192",
+      "detail": {
+        "id": 25192,
+        "name": "Unterhalt von Sammlungsgegenständen und Museumsobjekten",
+        "pflichtenheftNummer": 55508,
+        "eibName": "Freilichtmuseum Ballenberg",
+        "eibNummer": 10412,
+        "eibAdresse": {
+          "id": 21251318,
+          "strasse": "Museumsstrasse",
+          "strassennummer": "100",
+          "plz": "3858",
+          "ort": "Hofstetten BE",
+          "kanton": {
+            "code": "BE",
+            "de": "Bern",
+            "fr": "Berne",
+            "it": "Berna"
+          },
+          "land": {
+            "code": "CH",
+            "de": "Schweiz",
+            "fr": "Suisse",
+            "it": "Svizzera"
+          }
+        },
+        "eibBetriebsbeschreibung": "Sammlung, Erforschung und Erhaltung der traditionellen ländlichen Bauten samt Einrichtungen aus allen Landesteilen der Schweiz (Freilichtmuseum).",
+        "bemerkungEinsatzadresse": "Schweizerisches Freilichtmuseum Ballenbe",
+        "taetigkeitList": [
+          {
+            "id": 48748,
+            "beschreibung": "Nachführen der Datenbank (Standorte/Zustand).",
+            "kurzbeschreibung": "Inventarisierung",
+            "prozentualerAnteil": 20
+          },
+          {
+            "id": 63768,
+            "beschreibung": "Reinigen und Reparieren von Gegenständen und Unterhaltsarbeiten von Museumsobjekten.",
+            "kurzbeschreibung": "Unterhalt von Gegenständen",
+            "prozentualerAnteil": 50
+          },
+          {
+            "id": 69202,
+            "beschreibung": "Mithilfe beim Ausstellen der Gegenstände in den Museumsgebäuden und beim Einlagern in den Sammlungsdepots.",
+            "kurzbeschreibung": "Hauseinrichtungen und Depots",
+            "prozentualerAnteil": 20
+          },
+          {
+            "id": 69694,
+            "beschreibung": "Transport der Gegenstände zwischen den Häusern und Werkstatt.",
+            "kurzbeschreibung": "Transport",
+            "prozentualerAnteil": 10
+          }
+        ],
+        "mindestdauerEinsatzInWochen": 4,
+        "wochenarbeitszeitInStunden": 42,
+        "arbeitszeitmodell": {
+          "code": "F",
+          "de": "Feste Arbeitszeit",
+          "fr": "Horaire de travail fixe",
+          "it": "Orario di lavoro fisso"
+        },
+        "wochenendarbeit": {
+          "code": "M",
+          "de": "Möglich",
+          "fr": "Possible",
+          "it": "Possibile"
+        },
+        "nachtarbeit": {
+          "code": "N",
+          "de": "Nein",
+          "fr": "Non",
+          "it": "No"
+        },
+        "abklaerungLeumundErforderlich": false,
+        "unterkunftAngeboten": {
+          "code": "IE",
+          "de": "Ja",
+          "fr": "Oui",
+          "it": "Sì"
+        },
+        "verpflegungAngeboten": {
+          "code": "DE",
+          "de": "Nein",
+          "fr": "Non",
+          "it": "No"
+        },
+        "kursZiviList": [],
+        "vorausgesetzteGrundkenntnisse": "Handwerker (z.B. Schreiner), Fahrausweis Kat. B",
+        "erwuenschteGrundkenntnisse": "selbständige Arbeitsweise, Interesse an Kulturgütererhaltung und Museen.\r\n\r\nAnfragen via Zivi-System  werden nicht beachtet",
+        "auflagenZdp": "Einsätze in einer Institution für welche die zivildienstleistende Person bereits ausserhalb des Zivildienstes oder im Rahmen einer Aus- oder Weiterbildung tätig ist oder während des vorangehenden Jahres tätig war oder zu der sie eine andere\n  besonders enge Beziehung unterhält sind nicht erlaubt.",
+        "kontaktPersonName": "Muster",
+        "kontaktPersonVorname": "Anna",
+        "kontaktPersonFunktion": "Personaladministration",
+        "kontaktPersonTelefon1": "+41 00 000 00 00",
+        "kontaktPersonEmail": "contact@example.ch",
+        "kontaktaufnahmeList": [
+          {
+            "code": "TELEFON",
+            "de": "Telefon",
+            "fr": "Téléphone",
+            "it": "Telefono"
+          },
+          {
+            "code": "E_MAIL",
+            "de": "E-Mail",
+            "fr": "Courriel",
+            "it": "E-mail"
+          }
+        ],
+        "adresseList": [
+          {
+            "id": 30032057,
+            "strasse": "Museumsstrasse",
+            "strassennummer": "100",
+            "plz": "3858",
+            "ort": "Hofstetten BE",
+            "kanton": {
+              "code": "BE",
+              "de": "Bern",
+              "fr": "Berne",
+              "it": "Berna"
+            },
+            "land": {
+              "code": "CH",
+              "de": "Schweiz",
+              "fr": "Suisse",
+              "it": "Svizzera"
+            }
+          }
+        ],
+        "schwerpunktprogramm": false,
+        "availableWeeks": [
+          "2026-10-26",
+          "2026-11-02",
+          "2026-11-09",
+          "2026-11-16",
+          "2026-11-23",
+          "2026-11-30",
+          "2026-12-07",
+          "2026-12-14",
+          "2027-01-11",
+          "2027-01-18",
+          "2027-01-25",
+          "2027-02-01",
+          "2027-02-08",
+          "2027-02-15",
+          "2027-02-22",
+          "2027-03-01",
+          "2027-03-08",
+          "2027-03-15",
+          "2027-03-22",
+          "2027-03-29",
+          "2027-04-05",
+          "2027-04-12",
+          "2027-04-19",
+          "2027-04-26",
+          "2027-05-03",
+          "2027-05-10",
+          "2027-05-17",
+          "2027-05-24",
+          "2027-05-31",
+          "2027-06-07",
+          "2027-06-14",
+          "2027-06-21",
+          "2027-06-28",
+          "2027-07-05",
+          "2027-07-12",
+          "2027-07-19",
+          "2027-07-26",
+          "2027-08-02",
+          "2027-08-09",
+          "2027-08-16",
+          "2027-08-23",
+          "2027-08-30",
+          "2027-09-06",
+          "2027-09-13",
+          "2027-09-20",
+          "2027-09-27",
+          "2027-10-04",
+          "2027-10-11",
+          "2027-10-18",
+          "2027-10-25",
+          "2027-11-01",
+          "2027-11-08",
+          "2027-11-15",
+          "2027-11-22"
+        ]
+      }
+    },
+    {
+      "id": 22020,
+      "number": 40904,
+      "title": "Gruppenleiter u. Kursassistent Waldprojektwochen",
+      "sector": {
+        "code": "4",
+        "de": "4 Umwelt und Naturschutz, Landschaftspflege und Wald",
+        "fr": "4 Protection de la nature et de l'environnement, entretien du paysage et forêt",
+        "it": "4 Protezione dell'ambiente e della natura, salvaguardia del paesaggio e foreste"
+      },
+      "taskAreas": [],
+      "place": "Thun",
+      "employer": "Stiftung Bildungswerkstatt Bergwald",
+      "employerId": 2382,
+      "url": "https://ziviconnect.admin.ch/zdp/pflichtenheft/22020",
+      "detail": {
+        "id": 22020,
+        "name": "Gruppenleiter u. Kursassistent Waldprojektwochen",
+        "pflichtenheftNummer": 40904,
+        "eibName": "Stiftung Bildungswerkstatt Bergwald",
+        "eibNummer": 21017,
+        "eibAdresse": {
+          "id": 21250606,
+          "strasse": "Reitweg",
+          "strassennummer": "7",
+          "plz": "3600",
+          "ort": "Thun",
+          "kanton": {
+            "code": "BE",
+            "de": "Bern",
+            "fr": "Berne",
+            "it": "Berna"
+          },
+          "land": {
+            "code": "CH",
+            "de": "Schweiz",
+            "fr": "Suisse",
+            "it": "Svizzera"
+          }
+        },
+        "eibBetriebsbeschreibung": "Die Stiftung Bildungswerkstatt Bergwald fördert eine ganzheitliche Auseinandersetzung mit den ökologischen, sozialen, kulturellen und wirtschaftlichen Aspekten der Beziehung des Menschen zu seinen natürlichen Lebensgrundlagen. Vermittlung einer\n\nnachhaltigen Naturerfahrung. Umweltpädagogische Zielsetzung.",
+        "bemerkungEinsatzadresse": "ganze Schweiz",
+        "taetigkeitList": [
+          {
+            "id": 4797,
+            "beschreibung": "Kursauswertungen; Retablierungsarbeiten; Berichte und Statistik",
+            "kurzbeschreibung": "Nachbearbeitung",
+            "prozentualerAnteil": 10
+          },
+          {
+            "id": 13270,
+            "beschreibung": "Mitwirkung im Leiterteam; Übernahme der Verantwortung für Teilbereiche der Kurswochen (z.B. Funkgeräte, Fahrzeugpark, Materialwart); Teilnahme an fachlichen und pädagogischen Besprechungen; ev. Betreuung einzelner Jugendlicher",
+            "kurzbeschreibung": "Teamassistenz",
+            "prozentualerAnteil": 10
+          },
+          {
+            "id": 46357,
+            "beschreibung": "Mitwirkung bei Rekognoszierungen; Bereitstellung von Werkzeugen / Fahrzeugen; eigene pädagogische und fachliche Vorbereitung und Weiterbildung (ev. Teilnahme an internen Weiterbildungen)",
+            "kurzbeschreibung": "Kursvorbereitung",
+            "prozentualerAnteil": 10
+          },
+          {
+            "id": 74678,
+            "beschreibung": "Ausführung allgemeiner administrativer Arbeiten; Unterstützung der Geschäftsleitung im Backoffice; eigene Weiterbildung",
+            "kurzbeschreibung": "Sachbearbeitung",
+            "prozentualerAnteil": 10
+          },
+          {
+            "id": 84568,
+            "beschreibung": "Führung von Arbeitsgruppen (Jugendliche aus Schulklassen, Lehrlingsgruppen) im Bergwald, Alpwirtschaft, Tourismus; selbständige Ausführung ergänzender Facharbeiten; Arbeitsvorbereitung vor Ort.",
+            "kurzbeschreibung": "Gruppenleitung",
+            "prozentualerAnteil": 60
+          }
+        ],
+        "mindestdauerEinsatzInWochen": 4,
+        "wochenarbeitszeitInStunden": 42,
+        "arbeitszeitmodell": {
+          "code": "G",
+          "de": "Gleitende Arbeitszeit",
+          "fr": "Horaire de travail variable",
+          "it": "Orario di lavoro flessibile"
+        },
+        "wochenendarbeit": {
+          "code": "J",
+          "de": "Ja",
+          "fr": "Oui",
+          "it": "Sì"
+        },
+        "nachtarbeit": {
+          "code": "M",
+          "de": "Möglich",
+          "fr": "Possible",
+          "it": "Possibile"
+        },
+        "abklaerungLeumundErforderlich": false,
+        "unterkunftAngeboten": {
+          "code": "IE",
+          "de": "Ja",
+          "fr": "Oui",
+          "it": "Sì"
+        },
+        "verpflegungAngeboten": {
+          "code": "IE",
+          "de": "Ja",
+          "fr": "Oui",
+          "it": "Sì"
+        },
+        "kursZiviList": [
+          {
+            "code": "UKNS",
+            "de": "Umwelt- und Naturschutz",
+            "fr": "Protection de l'environnement et de la nature",
+            "it": "Protezione dell'ambiente e della natura"
+          }
+        ],
+        "vorausgesetzteGrundkenntnisse": "Forstliche Ausbildung oder eine solche in verwandten Berufen wie Landwirtschaft, Landschaftsgärtner, Gartenbau etc.; biologische und technische Grundkenntnisse rund um Wald- und Alpwirtschaft",
+        "erwuenschteGrundkenntnisse": "Pädagogische Erfahrung mit Jugendlichen; Leitungserfahrung; Stehvermögen; Sozialkompetenz; Teamfähigkeit",
+        "kontaktPersonName": "Beispiel",
+        "kontaktPersonVorname": "Thomas",
+        "kontaktPersonFunktion": "Stv. Geschäftsleiter",
+        "kontaktPersonTelefon1": "+41 00 000 00 00",
+        "kontaktPersonTelefon2": "+41 00 000 00 00",
+        "kontaktPersonEmail": "contact@example.ch",
+        "kontaktaufnahmeList": [
+          {
+            "code": "E_MAIL",
+            "de": "E-Mail",
+            "fr": "Courriel",
+            "it": "E-mail"
+          },
+          {
+            "code": "TELEFON",
+            "de": "Telefon",
+            "fr": "Téléphone",
+            "it": "Telefono"
+          }
+        ],
+        "adresseList": [
+          {
+            "id": 30028969,
+            "strasse": "Reitweg",
+            "strassennummer": "7",
+            "plz": "3600",
+            "ort": "Thun",
+            "kanton": {
+              "code": "BE",
+              "de": "Bern",
+              "fr": "Berne",
+              "it": "Berna"
+            },
+            "land": {
+              "code": "CH",
+              "de": "Schweiz",
+              "fr": "Suisse",
+              "it": "Svizzera"
+            }
+          }
+        ],
+        "schwerpunktprogramm": true,
+        "availableWeeks": [
+          "2026-10-26",
+          "2026-11-02",
+          "2026-11-09",
+          "2026-11-16",
+          "2026-11-23",
+          "2026-11-30",
+          "2026-12-07",
+          "2026-12-14",
+          "2026-12-21",
+          "2026-12-28",
+          "2027-02-01",
+          "2027-02-08",
+          "2027-02-15",
+          "2027-02-22",
+          "2027-03-01",
+          "2027-03-08",
+          "2027-03-15",
+          "2027-03-22",
+          "2027-03-29",
+          "2027-04-05",
+          "2027-04-12",
+          "2027-04-19",
+          "2027-04-26",
+          "2027-05-03",
+          "2027-05-10",
+          "2027-05-17",
+          "2027-05-24",
+          "2027-05-31",
+          "2027-06-07",
+          "2027-06-14",
+          "2027-06-21",
+          "2027-06-28",
+          "2027-07-05",
+          "2027-07-12",
+          "2027-07-19",
+          "2027-07-26",
+          "2027-08-02",
+          "2027-08-09",
+          "2027-08-16",
+          "2027-08-23",
+          "2027-08-30",
+          "2027-09-06",
+          "2027-09-13",
+          "2027-09-20",
+          "2027-09-27",
+          "2027-10-04",
+          "2027-10-11",
+          "2027-10-18",
+          "2027-10-25"
+        ]
+      }
+    },
+    {
+      "id": 24742,
+      "number": 55098,
+      "title": "Aide-archiviste",
+      "sector": {
+        "code": "3",
+        "de": "3 Kulturgütererhaltung",
+        "fr": "3 Conservation des biens culturels",
+        "it": "3 Conservazione dei beni culturali"
+      },
+      "taskAreas": [
+        {
+          "code": "KTMM_ALTER",
+          "de": "Kontakt mit Menschen / Alter",
+          "fr": "Contacts humains / Vieillesse",
+          "it": "Contatto con le persone / Anziani"
+        },
+        {
+          "code": "RECHERCHE_D_K_D",
+          "de": "Recherche, Datenaufbereitung, Katalogisierung, Dokumentation",
+          "fr": "Recherche documentaire, préparation de données, catalogage, documentation",
+          "it": "Ricerca, preparazione dei dati, catalogazione, documentazione"
+        },
+        {
+          "code": "BUROTATIGKEITEN",
+          "de": "Bürotätigkeiten",
+          "fr": "Tâches de bureau",
+          "it": "Lavori d'ufficio"
+        }
+      ],
+      "place": "Martigny, Bourg-St-Pierre",
+      "employer": "Hospice du Grand-St-Bernard",
+      "employerId": 2918,
+      "url": "https://ziviconnect.admin.ch/zdp/pflichtenheft/24742",
+      "detail": {
+        "id": 24742,
+        "name": "Aide-archiviste",
+        "pflichtenheftNummer": 55098,
+        "eibName": "Hospice du Grand-St-Bernard",
+        "eibNummer": 21326,
+        "eibAdresse": {
+          "id": 21250931,
+          "strasse": "Col du Grand-St-Bernard",
+          "strassennummer": "2",
+          "plz": "1946",
+          "ort": "Bourg-St-Pierre",
+          "kanton": {
+            "code": "VS",
+            "de": "Wallis",
+            "fr": "Valais",
+            "it": "Vallese"
+          },
+          "land": {
+            "code": "CH",
+            "de": "Schweiz",
+            "fr": "Suisse",
+            "it": "Svizzera"
+          }
+        },
+        "eibBetriebsbeschreibung": "Depuis le XIème siècle, l'accueil du prochain est la vocation primordiale de l'hospice du Grand-Saint-Bernard où chacun est reçu, quelle que soit sa religion. Le civiliste soutient la communauté des chanoines dans leur mission d'accueil. Il effectue également des activités de conservation de biens remontant au XIIème siècle au sein du musée, de la bibliothèque et du service des archives.",
+        "bemerkungEinsatzadresse": "Martigny (VS), Gd-St-Bernard (VS, été)",
+        "taetigkeitList": [
+          {
+            "id": 9334,
+            "beschreibung": "La grande partie des objets ont été inventioriés dans les années 1980. Après déplacement,  il faut les vérifier, les recoller.",
+            "kurzbeschreibung": "Vérification, recollement",
+            "prozentualerAnteil": 35
+          },
+          {
+            "id": 47540,
+            "beschreibung": "Les fichiers sont informatisés sur différents supports. Certains ont été simplement scannés. Il faut unifier le fichier.",
+            "kurzbeschreibung": "Informatisation",
+            "prozentualerAnteil": 35
+          },
+          {
+            "id": 82832,
+            "beschreibung": "Compléter l'inventaire car certains objets ne sont pas encore répertoriés.",
+            "kurzbeschreibung": "Inventaire",
+            "prozentualerAnteil": 30
+          }
+        ],
+        "mindestdauerEinsatzInWochen": 4,
+        "wochenarbeitszeitInStunden": 42,
+        "arbeitszeitmodell": {
+          "code": "G",
+          "de": "Gleitende Arbeitszeit",
+          "fr": "Horaire de travail variable",
+          "it": "Orario di lavoro flessibile"
+        },
+        "wochenendarbeit": {
+          "code": "N",
+          "de": "Nein",
+          "fr": "Non",
+          "it": "No"
+        },
+        "nachtarbeit": {
+          "code": "N",
+          "de": "Nein",
+          "fr": "Non",
+          "it": "No"
+        },
+        "abklaerungLeumundErforderlich": false,
+        "unterkunftAngeboten": {
+          "code": "IE",
+          "de": "Ja",
+          "fr": "Oui",
+          "it": "Sì"
+        },
+        "verpflegungAngeboten": {
+          "code": "IE",
+          "de": "Ja",
+          "fr": "Oui",
+          "it": "Sì"
+        },
+        "kursZiviList": [],
+        "vorausgesetzteGrundkenntnisse": "Connaissances des outils informatiques (programme Filemakerpro), de la photographie, bonne culture générale.",
+        "erwuenschteGrundkenntnisse": "Motivation, personne consciencieuse, fibre sociale (dialogue avec des chanoines à la retraite).",
+        "kontaktPersonName": "Exemple",
+        "kontaktPersonVorname": "Marie",
+        "kontaktPersonFunktion": "Archiviste",
+        "kontaktPersonTelefon1": "+41 00 000 00 00",
+        "kontaktPersonEmail": "contact@example.ch",
+        "kontaktaufnahmeList": [
+          {
+            "code": "E_MAIL",
+            "de": "E-Mail",
+            "fr": "Courriel",
+            "it": "E-mail"
+          }
+        ],
+        "adresseList": [
+          {
+            "id": 30269977,
+            "strasse": "Hôtel-de-Ville",
+            "strassennummer": "18",
+            "adresszusatz": "CP 679",
+            "plz": "1920",
+            "ort": "Martigny",
+            "kanton": {
+              "code": "VS",
+              "de": "Wallis",
+              "fr": "Valais",
+              "it": "Vallese"
+            },
+            "land": {
+              "code": "CH",
+              "de": "Schweiz",
+              "fr": "Suisse",
+              "it": "Svizzera"
+            }
+          },
+          {
+            "id": 30271043,
+            "strasse": "Col du Gd-St-Bernard",
+            "strassennummer": "2",
+            "plz": "1946",
+            "ort": "Bourg-St-Pierre",
+            "kanton": {
+              "code": "VS",
+              "de": "Wallis",
+              "fr": "Valais",
+              "it": "Vallese"
+            },
+            "land": {
+              "code": "CH",
+              "de": "Schweiz",
+              "fr": "Suisse",
+              "it": "Svizzera"
+            }
+          }
+        ],
+        "schwerpunktprogramm": false,
+        "availableWeeks": [
+          "2026-10-26",
+          "2026-12-07",
+          "2026-12-14",
+          "2026-12-21",
+          "2026-12-28",
+          "2027-01-04",
+          "2027-01-11",
+          "2027-01-18",
+          "2027-01-25",
+          "2027-02-01",
+          "2027-02-08",
+          "2027-02-15",
+          "2027-02-22",
+          "2027-03-01",
+          "2027-03-08",
+          "2027-03-15",
+          "2027-03-22",
+          "2027-03-29",
+          "2027-04-05",
+          "2027-04-12",
+          "2027-04-19",
+          "2027-04-26",
+          "2027-05-03",
+          "2027-05-10",
+          "2027-05-17",
+          "2027-05-24",
+          "2027-05-31",
+          "2027-06-07",
+          "2027-06-14",
+          "2027-06-21",
+          "2027-06-28",
+          "2027-07-05",
+          "2027-07-12",
+          "2027-07-19",
+          "2027-07-26",
+          "2027-08-02",
+          "2027-08-09",
+          "2027-08-16",
+          "2027-08-23",
+          "2027-08-30",
+          "2027-09-06",
+          "2027-12-20",
+          "2027-12-27"
+        ]
+      }
+    },
+    {
+      "id": 16904,
+      "number": 36877,
+      "title": "Aide-intendance",
+      "sector": {
+        "code": "1",
+        "de": "1 Gesundheitswesen",
+        "fr": "1 Santé",
+        "it": "1 Sanità"
+      },
+      "taskAreas": [],
+      "place": "Porrentruy",
+      "employer": "Hôpital du Jura - Site Résidence La Promenade",
+      "employerId": 3402,
+      "url": "https://ziviconnect.admin.ch/zdp/pflichtenheft/16904",
+      "detail": {
+        "id": 16904,
+        "name": "Aide-intendance",
+        "pflichtenheftNummer": 36877,
+        "eibName": "Hôpital du Jura - Site Résidence La Promenade",
+        "eibNummer": 21488,
+        "eibAdresse": {
+          "id": 19152251,
+          "strasse": "Chemin de l'Hôpital",
+          "strassennummer": "9",
+          "plz": "2900",
+          "ort": "Porrentruy",
+          "kanton": {
+            "code": "JU",
+            "de": "Jura",
+            "fr": "Jura",
+            "it": "Giura"
+          },
+          "land": {
+            "code": "CH",
+            "de": "Schweiz",
+            "fr": "Suisse",
+            "it": "Svizzera"
+          }
+        },
+        "eibBetriebsbeschreibung": "L’histoire de la Résidence La Promenade est étroitement liée à celle de l’Hôpital régional de Delémont puisque «l’hospice» prit la place de l’hôpital en 1935, lorsque celui-ci quitta la vieille ville pour déployer ses activités à l’emplacement\r\n\r\nactuel. C’est ainsi que la Résidence La Promenade a son adresse à la rue de l’Hôpital; un clin d’œil du passé. Pour faire face aux besoins de la population âgée, un bâtiment supplémentaire fut érigé en 1974, à l’ouest du premier édifice. Ne\r\n\r\nformant qu’une seule institution avec l’Hôpital régional jusqu’en 1997, la Résidence La Promenade est actuellement l’un des quatre sites de l’Hôpital du Jura.",
+        "bemerkungEinsatzadresse": "Delémont (JU)",
+        "taetigkeitList": [
+          {
+            "id": 41513,
+            "beschreibung": "Ramassage et tri du linge des résidants.",
+            "kurzbeschreibung": "Linge",
+            "prozentualerAnteil": 20
+          },
+          {
+            "id": 68554,
+            "beschreibung": "Nettoyage fenêtres locaux communs.",
+            "kurzbeschreibung": "Nettoyage",
+            "prozentualerAnteil": 30
+          },
+          {
+            "id": 94829,
+            "beschreibung": "Nettoyage des chambres des malades.",
+            "kurzbeschreibung": "Entretien",
+            "prozentualerAnteil": 50
+          }
+        ],
+        "mindestdauerEinsatzInWochen": 4,
+        "wochenarbeitszeitInStunden": 42,
+        "arbeitszeitmodell": {
+          "code": "F",
+          "de": "Feste Arbeitszeit",
+          "fr": "Horaire de travail fixe",
+          "it": "Orario di lavoro fisso"
+        },
+        "wochenendarbeit": {
+          "code": "N",
+          "de": "Nein",
+          "fr": "Non",
+          "it": "No"
+        },
+        "nachtarbeit": {
+          "code": "N",
+          "de": "Nein",
+          "fr": "Non",
+          "it": "No"
+        },
+        "abklaerungLeumundErforderlich": false,
+        "unterkunftAngeboten": {
+          "code": "IE",
+          "de": "Ja",
+          "fr": "Oui",
+          "it": "Sì"
+        },
+        "verpflegungAngeboten": {
+          "code": "IE",
+          "de": "Ja",
+          "fr": "Oui",
+          "it": "Sì"
+        },
+        "kursZiviList": [],
+        "vorausgesetzteGrundkenntnisse": "Motivation à travailler dans un lieu de vie pour personnes âgées.",
+        "erwuenschteGrundkenntnisse": "Personne soigneuse et autonome.",
+        "auflagenZdp": "La personne en service est tenue de respecter l'obligation de garder le secret en usage dans l'établissement d'affectation selon art 34 LSC.",
+        "kontaktPersonName": "Modèle",
+        "kontaktPersonVorname": "Luc",
+        "kontaktPersonFunktion": "Assistante administrative",
+        "kontaktPersonTelefon1": "+41 00 000 00 00",
+        "kontaktPersonEmail": "contact@example.ch",
+        "kontaktaufnahmeList": [
+          {
+            "code": "TELEFON",
+            "de": "Telefon",
+            "fr": "Téléphone",
+            "it": "Telefono"
+          },
+          {
+            "code": "E_MAIL",
+            "de": "E-Mail",
+            "fr": "Courriel",
+            "it": "E-mail"
+          }
+        ],
+        "adresseList": [
+          {
+            "id": 30024055,
+            "strasse": "Chemin de l'Hôpital",
+            "strassennummer": "9",
+            "plz": "2900",
+            "ort": "Porrentruy",
+            "kanton": {
+              "code": "JU",
+              "de": "Jura",
+              "fr": "Jura",
+              "it": "Giura"
+            },
+            "land": {
+              "code": "CH",
+              "de": "Schweiz",
+              "fr": "Suisse",
+              "it": "Svizzera"
+            }
+          }
+        ],
+        "schwerpunktprogramm": false,
+        "availableWeeks": [
+          "2026-10-26",
+          "2026-11-02",
+          "2026-11-09",
+          "2026-11-16",
+          "2026-11-23",
+          "2026-11-30",
+          "2026-12-07",
+          "2026-12-14",
+          "2026-12-21",
+          "2026-12-28",
+          "2027-01-04",
+          "2027-01-11",
+          "2027-01-18",
+          "2027-01-25",
+          "2027-02-01",
+          "2027-02-08",
+          "2027-02-15",
+          "2027-02-22",
+          "2027-03-01",
+          "2027-03-08",
+          "2027-03-15",
+          "2027-03-22",
+          "2027-03-29",
+          "2027-04-05",
+          "2027-04-12",
+          "2027-04-19",
+          "2027-04-26",
+          "2027-05-03",
+          "2027-05-10",
+          "2027-05-17",
+          "2027-05-24",
+          "2027-05-31",
+          "2027-06-07",
+          "2027-06-14",
+          "2027-06-21",
+          "2027-06-28",
+          "2027-07-05",
+          "2027-07-12",
+          "2027-07-19",
+          "2027-07-26",
+          "2027-08-02",
+          "2027-08-09",
+          "2027-08-16",
+          "2027-08-23",
+          "2027-08-30",
+          "2027-09-06",
+          "2027-09-13",
+          "2027-09-20",
+          "2027-09-27",
+          "2027-10-04",
+          "2027-10-11",
+          "2027-10-18",
+          "2027-10-25",
+          "2027-11-01",
+          "2027-11-08",
+          "2027-11-15",
+          "2027-11-22",
+          "2027-11-29",
+          "2027-12-06",
+          "2027-12-13",
+          "2027-12-20",
+          "2027-12-27"
+        ]
+      }
+    },
+    {
+      "id": 3118604,
+      "number": 116386,
+      "title": "Manutenzione dell’alpe",
+      "sector": {
+        "code": "5",
+        "de": "5 Landwirtschaft",
+        "fr": "5 Agriculture",
+        "it": "5 Agricoltura"
+      },
+      "taskAreas": [
+        {
+          "code": "HANDWERKLICHE_TAETIGKEIT",
+          "de": "Handwerkliche Tätigkeit / Technischer Dienst",
+          "fr": "Travail manuel / Service technique",
+          "it": "Attività manuali / Servizio tecnico"
+        },
+        {
+          "code": "ARBEIT_IM_FREIEN",
+          "de": "Arbeit im Freien",
+          "fr": "Travail en plein air",
+          "it": "Lavoro ambientale / Lavoro all'aperto"
+        },
+        {
+          "code": "KOERPERLICHE_ARBEIT",
+          "de": "Körperliche Arbeit",
+          "fr": "Travail physique",
+          "it": "Lavoro fisico"
+        }
+      ],
+      "place": "Viano",
+      "employer": "Alpe San Romerio",
+      "employerId": 431362,
+      "url": "https://ziviconnect.admin.ch/zdp/pflichtenheft/3118604",
+      "detail": {
+        "id": 3118604,
+        "name": "Manutenzione dell’alpe",
+        "pflichtenheftNummer": 116386,
+        "eibName": "Alpe San Romerio",
+        "eibNummer": 36357,
+        "eibAdresse": {
+          "id": 18880823,
+          "strasse": "San Romerio",
+          "plz": "7743",
+          "ort": "Brusio",
+          "kanton": {
+            "code": "GR",
+            "de": "Graubünden",
+            "fr": "Grisons",
+            "it": "Grigioni"
+          },
+          "land": {
+            "code": "CH",
+            "de": "Schweiz",
+            "fr": "Suisse",
+            "it": "Svizzera"
+          }
+        },
+        "eibBetriebsbeschreibung": "L'Alpe San Romerio, situata in Val Poschiavo, nel cantone dei Grigioni e nel comune di Brusio; è composta da un edificio principale con alcuni edifici rurali annessi; bella conca con pendii e piani soleggiati. Esposto a sud e situato tra 1750 e 2200 msm. Pascolo magro e bosco pascolato per ca. 8 ha e ca. 3,5 ha di prati. L'alpe è gestita da Gino Bongulielmi, aiutato da alcune persone.",
+        "bemerkungEinsatzadresse": "San Romerio/Viano",
+        "taetigkeitList": [
+          {
+            "id": 6539210,
+            "beschreibung": "Ambito estivazione, biodiversità e qualità del paesaggio\n(lavori per i quali vengono corrisposti contributi)\nProtezione e manutenzione dei pascoli, preservazione dell’apertura del paesaggio, lotta alla diffusione delle specie vegetali problematiche: spietramento e rimozione di legname dai pascoli (anche dopo valanghe e frane), accatastamento di legna e pietre, manutenzione dei pascoli selvatici, rimozione di alberi, arbusti, rovi e piante infestanti, rimozione del materiale vegetale tagliato/estirpato, sradicamento di piante e fresatura di tronchi, manutenzione dei sentieri percorsi dagli animali, manutenzione e messa in sicurezza dei corsi d’acqua, protezione di superfici dal calpestio e dalla brucatura degli animali al pascolo (ad es. recinzioni), fienagione selvatica. Gestione delle superfici che rientrano nella protezione della natura conforme alle prescrizioni (secondo i contratti o i piani di gestione): ad es. falciatura e decespugliatura delle paludi. Collaborazione nella realizzazione di progetti concernenti la qualità del paesaggio.\n\nAmbito protezione della natura e del paesaggio e conservazione dei beni culturali (lavori per i quali non vengono corrisposti contributi)\nCollaborare ad es. alla costruzione di muri a secco, sistemazione di cumuli di pietre, manutenzione di canali di irrigazione di importanza storica.\n\nAmbito cura del bosco\nMessa a dimora di alberi, interventi di diradamento al fine di favorire la crescita di piante giovani, posa di strutture di protezione contro i danni della selvaggina, rimozione di sterpaglia e roveti, manutenzione del margine boschivo per impedire l’avanzamento del bosco e per la valorizzazione ecologica, manutenzione delle perticaie, diramatura, manutenzione di biotopi ad alto valore ecologico, lotta alle specie vegetali problematiche e alle neofite, lavori di ripristino in seguito a danni da tempesta, taglio selettivo, lavori di esbosco, sramatura, rimozione del legname, accatastamento della legna.\n\nCollaborazione alle attività di produzione agricola\nLa collaborazione alle attività di produzione agricola è consentita durante i periodi in cui l’azienda agricola è sovraccarica di lavoro o quando i lavori devono essere interrotti a causa di fattori meteorologici. Ad es.: conduzione del bestiame al pascolo, rimozione del letame, mungitura, produzione di latticini con il latte dell’alpe, pulizia di locali e attrezzi, taglio della legna. La collaborazione in attività di ristorazione non rientra tra le attività regolari ed è permessa soltanto in misura del 10 per cento.",
+            "kurzbeschreibung": "Durata dell'estivazione 22.05.-24.10.",
+            "prozentualerAnteil": 100
+          }
+        ],
+        "mindestdauerEinsatzInWochen": 4,
+        "wochenarbeitszeitInStunden": 45,
+        "arbeitszeitmodell": {
+          "code": "F",
+          "de": "Feste Arbeitszeit",
+          "fr": "Horaire de travail fixe",
+          "it": "Orario di lavoro fisso"
+        },
+        "wochenendarbeit": {
+          "code": "M",
+          "de": "Möglich",
+          "fr": "Possible",
+          "it": "Possibile"
+        },
+        "nachtarbeit": {
+          "code": "N",
+          "de": "Nein",
+          "fr": "Non",
+          "it": "No"
+        },
+        "abklaerungLeumundErforderlich": false,
+        "unterkunftAngeboten": {
+          "code": "IE",
+          "de": "Ja",
+          "fr": "Oui",
+          "it": "Sì"
+        },
+        "verpflegungAngeboten": {
+          "code": "IE",
+          "de": "Ja",
+          "fr": "Oui",
+          "it": "Sì"
+        },
+        "kursZiviList": [
+          {
+            "code": "ALPPF",
+            "de": "Alp-Pflege",
+            "fr": "Entretien des alpages",
+            "it": "Manutenzione dell‘alpe"
+          },
+          {
+            "code": "UMM",
+            "de": "Umgang mit der Motorsäge",
+            "fr": "Maniement de la tronçonneuse",
+            "it": "Uso della motosega"
+          }
+        ],
+        "vorausgesetzteGrundkenntnisse": "Motivazione e costituzione robusta per svolgere un lavoro fisico e faticoso all’aperto. Disponibilità a tempi di presenza prolungati. A dipendenza delle condizioni meteorologiche l'impegno settimanale può durare più di 45 ore (massimo 50 ore); le ore supplementari vengono recuperate in tempo libero. \nDisponibilità alla condivisione di piccoli spazi abitativi con il personale dell’alpe. Disponibilità all’uso di infrastrutture sanitarie semplici.",
+        "auflagenZdp": "Non sono ammessi impieghi presso un istituto in cui il civilista svolge o, nell’anno precedente il servizio civile, ha svolto un’attività dietro compenso o nell’ambito di una formazione o di una formazione continua, rispettivamente con il quale il civilista mantiene un’altra relazione particolarmente stretta (volontariato prolungato o intenso, persone vicine al civilista possono influire sul suo impiego, ecc.).",
+        "kontaktPersonName": "Esempio",
+        "kontaktPersonVorname": "Luca",
+        "kontaktPersonFunktion": "Gestore dell'Alpe",
+        "kontaktPersonTelefon1": "+41 00 000 00 00",
+        "kontaktPersonTelefon2": "+41 00 000 00 00",
+        "kontaktPersonEmail": "contact@example.ch",
+        "kontaktaufnahmeList": [
+          {
+            "code": "E_MAIL",
+            "de": "E-Mail",
+            "fr": "Courriel",
+            "it": "E-mail"
+          },
+          {
+            "code": "TELEFON",
+            "de": "Telefon",
+            "fr": "Téléphone",
+            "it": "Telefono"
+          }
+        ],
+        "adresseList": [
+          {
+            "id": 30068350,
+            "strasse": "Paese",
+            "strassennummer": "1",
+            "adresszusatz": "Alpe San Romerio",
+            "plz": "7747",
+            "ort": "Viano",
+            "kanton": {
+              "code": "GR",
+              "de": "Graubünden",
+              "fr": "Grisons",
+              "it": "Grigioni"
+            },
+            "land": {
+              "code": "CH",
+              "de": "Schweiz",
+              "fr": "Suisse",
+              "it": "Svizzera"
+            }
+          }
+        ],
+        "schwerpunktprogramm": true,
+        "availableWeeks": [
+          "2027-05-24",
+          "2027-05-31",
+          "2027-06-07",
+          "2027-06-14",
+          "2027-06-21",
+          "2027-06-28",
+          "2027-07-05",
+          "2027-07-12",
+          "2027-07-19",
+          "2027-07-26",
+          "2027-08-02",
+          "2027-08-09",
+          "2027-08-16",
+          "2027-08-23",
+          "2027-08-30",
+          "2027-09-06",
+          "2027-09-13",
+          "2027-09-20",
+          "2027-09-27",
+          "2027-10-04",
+          "2027-10-11",
+          "2027-10-18"
+        ]
+      }
+    }
+  ]
+}
