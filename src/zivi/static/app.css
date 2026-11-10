@@ -137,50 +137,86 @@ h3 { font-size: 1rem; margin: 0 0 .5rem; display: flex; align-items: center; jus
 
 /* ---- layout */
 .tabs { display: none; }
+/* the filter column is a bit wider where the labels are longer (German) */
+:root { --filters-w: 304px; }
+:root:lang(it) { --filters-w: 314px; }
+:root:lang(de) { --filters-w: 332px; }
 .layout {
-  flex: 1; display: grid; grid-template-columns: 300px minmax(340px, 440px) 1fr; min-height: 0;
+  flex: 1; display: grid; grid-template-columns: var(--filters-w) minmax(340px, 440px) 1fr; min-height: 0;
   grid-template-rows: minmax(0, 1fr); /* without it the row grows to the longest pane */
 }
 .pane { min-height: 0; overflow: auto; }
-.filters { background: var(--panel); border-right: 1px solid var(--line); padding: .8rem 1rem 2rem; }
-.filters-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: .4rem; }
-.group { padding: .9rem 0; border-top: 1px solid var(--line); }
-.group label { display: block; font-size: .9rem; color: var(--slate); }
-.group input[type=date], .group input[type=number], .group input[type=text], .group select {
-  width: 100%; padding: .4rem .5rem; border: 1px solid var(--line); border-radius: 6px;
-  background: var(--panel); margin-top: .15rem;
+
+/* ---- filter column: one card per section on a soft background */
+.filters { background: var(--mist); border-right: 1px solid var(--line); padding: .7rem .75rem 2rem; }
+.filters-head {
+  display: flex; justify-content: space-between; align-items: center; margin: 0 .2rem .6rem;
+  font-size: 1.05rem;
 }
+.group {
+  margin: 0 0 .6rem; padding: .75rem .8rem .8rem; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 12px;
+}
+.group h3 {
+  font-size: .74rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--slate); margin: 0 0 .65rem;
+}
+.group label { display: block; font-size: .88rem; color: var(--slate); }
+.group input[type=date], .group input[type=number], .group input[type=text], .group select {
+  width: 100%; padding: .42rem .55rem; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel); margin-top: .2rem;
+}
+.group input:focus, .group select:focus { border-color: var(--spruce); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--spruce) 14%, transparent); }
 .row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .5rem; margin-bottom: .5rem; }
 .row2 input { min-width: 0; }
 .inline { margin: .4rem 0; }
 .inline input.num { width: 4.2rem; display: inline-block; margin: 0 .2rem; }
 .inline input[type=range] { width: 60%; vertical-align: middle; accent-color: var(--spruce); }
-.check { display: flex !important; gap: .45rem; align-items: flex-start; margin: .35rem 0; color: var(--ink) !important; }
+.check { display: flex !important; gap: .5rem; align-items: flex-start; margin: .45rem 0 0; color: var(--ink) !important; }
 .check input { accent-color: var(--spruce); margin-top: .2rem; }
-.hint { font-size: .85rem; color: var(--slate); margin: 0 0 .5rem; }
+.hint { font-size: .84rem; color: var(--slate); margin: 0 0 .5rem; }
 
-.tri, .multi { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .25rem .5rem; margin: .35rem 0; font-size: .92rem; }
-.tri .opts, .multi .opts { margin-left: auto; } /* long labels (German) push the buttons to the next line */
-.tri .opts, .multi .opts { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; flex-shrink: 0; }
-.tri button, .multi button {
-  border: 0; background: var(--panel); padding: .25rem .55rem; cursor: pointer; color: var(--slate); font-size: .85rem;
+/* yes / no rows: the label, then a full-width group of three equal buttons, so every
+   button lines up with the ones above and below it */
+.tri, .multi { display: grid; gap: .3rem; padding: .45rem 0; font-size: .88rem; }
+.tri > span, .multi > span { color: var(--ink); font-weight: 600; }
+.tri + .tri, .tri + .multi, .multi + .multi, .multi + .check { border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.multi + .check { padding-top: .5rem; }
+.tri > span, .multi > span { line-height: 1.25; }
+.tri .opts, .multi .opts {
+  display: grid; grid-template-columns: repeat(3, 1fr); padding: 2px; gap: 2px;
+  background: var(--mist); border-radius: 9px;
 }
-.tri button + button, .multi button + button { border-left: 1px solid var(--line); }
-.tri button[aria-pressed=true], .multi button[aria-pressed=true] { background: var(--spruce); color: var(--panel); }
-.tri button small, .multi button small { opacity: .75; }
+.tri button, .multi button {
+  border: 0; background: none; padding: .3rem .3rem; cursor: pointer; color: var(--slate); font-size: .82rem;
+  border-radius: 7px; white-space: nowrap; display: flex; justify-content: center; align-items: baseline; gap: .35rem;
+  transition: background .12s, color .12s;
+}
+.tri button:hover, .multi button:hover { background: var(--panel); color: var(--ink); }
+.tri button[aria-pressed=true], .multi button[aria-pressed=true] { background: var(--spruce); color: var(--panel); font-weight: 700; }
+.tri button small, .multi button small { opacity: .75; font-size: .7rem; font-weight: 400; }
 
-.facet label { display: flex; justify-content: space-between; gap: .5rem; align-items: center; padding: .15rem 0; color: var(--ink); cursor: pointer; }
+/* checkbox lists: full-width rows with a count badge */
+.facet label {
+  display: flex; gap: .5rem; align-items: center; padding: .28rem .4rem; margin: 0 -.4rem;
+  border-radius: 7px; color: var(--ink); cursor: pointer; font-size: .88rem;
+}
+.facet label:hover { background: var(--mist); }
 .facet label span:first-of-type { flex: 1; }
-.facet input { accent-color: var(--spruce); }
-.facet .n { color: var(--slate); font-size: .82rem; }
+.facet input { accent-color: var(--spruce); flex-shrink: 0; }
+.facet .n { color: var(--slate); font-size: .74rem; background: var(--mist); border-radius: 999px; padding: .05rem .45rem; min-width: 2.1rem; text-align: center; }
+.facet label:hover .n { background: var(--panel); }
 .facet label.zero { opacity: .45; }
+.facet .hint { margin: .7rem 0 .3rem !important; font-size: .74rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .chipsel { display: flex; flex-wrap: wrap; gap: .3rem; }
-.chipsel label { position: relative; display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: .15rem .55rem; font-size: .85rem; }
+.chipsel label { position: relative; display: inline-flex; gap: .3rem; margin: 0; border: 1px solid var(--line); border-radius: 999px; padding: .18rem .6rem; font-size: .84rem; }
+.chipsel label:hover { background: var(--mist); }
+.chipsel .n { background: none; padding: 0; min-width: 0; }
 .chipsel label:has(input:checked) { background: var(--spruce); border-color: var(--spruce); color: var(--panel); }
 .chipsel label:has(input:checked) .n { color: var(--panel); }
 .chipsel input { position: absolute; inset: 0; opacity: 0; } /* stays inside its chip, not the page */
 .chipsel label:has(input:focus-visible) { outline: 2px solid var(--focus); }
-.mini-seg { font-weight: 400; font-size: .82rem; color: var(--slate); display: flex; gap: .5rem; }
+.mini-seg { font-weight: 400; font-size: .74rem; color: var(--slate); display: flex; gap: .5rem; letter-spacing: 0; text-transform: none; }
 .mini-seg label { display: inline-flex; gap: .2rem; align-items: center; color: var(--slate); }
 
 .place-input { position: relative; }
