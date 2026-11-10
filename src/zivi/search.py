@@ -192,6 +192,8 @@ class Engine:
         self.ai_path = Path(self.db_path).with_name("ai_settings.json")
         # database translation through Ollama (Base de données → Traduction)
         self.tr_model, self.ollama_host = TRANSLATE_MODEL, DEFAULT_HOST
+        # free Ollama's memory and stop it once no page of the app is open
+        self.ollama_auto_stop = True
         # interface language, and whether the AI index uses the text translated into it
         self.ui_lang = "fr"
         self.ai_translated = False
@@ -215,6 +217,7 @@ class Engine:
         if saved.get("ui_lang") in LANGS:
             self.ui_lang = saved["ui_lang"]
         self.ollama_host = host_from(saved.get("ollama_host") or self.ollama_host)
+        self.ollama_auto_stop = bool(saved.get("ollama_auto_stop", True))
 
     def save_ai_settings(self) -> None:
         self.ai_path.parent.mkdir(parents=True, exist_ok=True)
@@ -223,7 +226,8 @@ class Engine:
                                    "translate_model": self.tr_model,
                                    "ai_translated": self.ai_translated,
                                    "ui_lang": self.ui_lang,
-                                   "ollama_host": self.ollama_host}), "utf-8")
+                                   "ollama_host": self.ollama_host,
+                                   "ollama_auto_stop": self.ollama_auto_stop}), "utf-8")
         tmp.replace(self.ai_path)
 
     # ------------------------------------------------------------------ favourites

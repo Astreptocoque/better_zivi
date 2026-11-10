@@ -22,7 +22,7 @@ from . import config
 from .converter import convert
 from .geocode import Geocoder, PostcodeTable
 from .messages import as_msg, msg
-from .ollama import Ollama, TranslationJob, host_from
+from .ollama import Ollama, PageWatch, TranslationJob, host_from
 from .search import LANGS, Engine
 
 STATIC = Path(__file__).parent / "static"
@@ -37,6 +37,13 @@ def create_app(db_path: Path = config.DB_PATH) -> FastAPI:
     engine = Engine(db_path)
     ollama = Ollama()
     tr_job = TranslationJob()
+    # Ollama is freed once the page is gone (unless a translation or AI build still runs)
+    watch = PageWatch(ollama, host=lambda: engine.ollama_host,
+                      enabled=lambda: engine.ollama_auto_stop,
+                      busy=lambda: bool(tr_job.progress.get("running")
+                                        or engine.semantic.progress.get("running")),
+                      # background tabs only run their timers about once a minute
+                      grace=90)
     state = {"import": {"running": False, "message": "", "progress": 0.0, "error": None,
                         "report": None, "started": None}}
     geo: dict = {}
@@ -166,7 +173,26 @@ def create_app(db_path: Path = config.DB_PATH) -> FastAPI:
     # ------------------------------------------------------------------ Ollama
     @app.get("/api/ollama")
     def ollama_status(host: str | None = None):
-        return ollama.status(host_from(host) if host else engine.ollama_host)
+        return {**ollama.status(host_from(host) if host else engine.ollama_host),
+                "auto_stop": engine.ollama_auto_stop}
+
+    @app.post("/api/alive")
+    def alive():
+        """Sent by the page every 20 s: someone is using the app."""
+        watch.alive()
+        return {"ok": True}
+
+    @app.post("/api/leave")
+    def leave():
+        """Sent by the page when it closes (navigator.sendBeacon)."""
+        watch.left()
+        return {"ok": True}
+
+    @app.post("/api/ollama/auto-stop")
+    def ollama_auto_stop(body: dict = Body(...)):
+        engine.ollama_auto_stop = bool(body.get("on"))
+        engine.save_ai_settings()
+        return {"auto_stop": engine.ollama_auto_stop}
 
     @app.post("/api/ollama/start")
     def ollama_start():

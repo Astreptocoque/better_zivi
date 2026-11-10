@@ -69,6 +69,8 @@ class Ollama:
     def __init__(self):
         self.pulls: dict[str, dict] = {}  # model -> download progress
         self._lock = threading.Lock()
+        self.proc: subprocess.Popen | None = None  # 'ollama serve' started by this app
+        self.stopped_by_us = False  # stopped when the page left: restart when it is back
 
     # ------------------------------------------------------------------ detection
     def status(self, host: str) -> dict:
@@ -94,10 +96,119 @@ class Ollama:
         flags = 0
         if sys.platform == "win32":
             flags = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
-        subprocess.Popen([exe, "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         stdin=subprocess.DEVNULL, creationflags=flags,
-                         start_new_session=sys.platform != "win32")
+        self.proc = subprocess.Popen([exe, "serve"], stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                                     creationflags=flags, start_new_session=sys.platform != "win32")
+        self.stopped_by_us = False
         return True
+
+    # ------------------------------------------------------------------ release
+    def running(self, host: str) -> bool:
+        try:
+            httpx.get(f"{host}/api/version", timeout=2)
+            return True
+        except httpx.HTTPError:
+            return False
+
+    def unload_all(self, host: str) -> list[str]:
+        """Free the memory: ask Ollama to unload every model it has loaded (keep_alive 0).
+        Generation models unload through /api/generate, embedding models through /api/embed."""
+        try:
+            loaded = [m["name"] for m in httpx.get(f"{host}/api/ps", timeout=3).json()
+                      .get("models", [])]
+        except (httpx.HTTPError, ValueError):
+            return []
+        for name in loaded:
+            for path, body in (("/api/generate", {"model": name, "keep_alive": 0}),
+                               ("/api/embed", {"model": name, "input": [], "keep_alive": 0})):
+                try:
+                    if httpx.post(f"{host}{path}", json=body, timeout=15).status_code < 400:
+                        break
+                except httpx.HTTPError:
+                    continue
+        return loaded
+
+    def stop(self) -> bool:
+        """Stop the Ollama server: the one this app started, else Ollama's own processes
+        (the tray app and 'ollama serve'), so it does not keep memory once the page is gone."""
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+            self.proc = None
+            self.stopped_by_us = True
+            return True
+        names = (["ollama app.exe", "ollama.exe"] if sys.platform == "win32" else ["ollama"])
+        stopped = False
+        for name in names:
+            if sys.platform == "win32":
+                cmd = ["taskkill", "/IM", name, "/F"]
+            else:
+                cmd = ["pkill", "-x", name]
+            try:
+                r = subprocess.run(cmd, capture_output=True, timeout=10,
+                                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                stopped = stopped or r.returncode == 0
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+        self.stopped_by_us = self.stopped_by_us or stopped
+        return stopped
+
+
+class PageWatch:
+    """Frees Ollama once no page of the app is open.
+
+    Pages call alive() every few seconds and left() when they close. A watcher thread
+    waits `grace` seconds after the last sign of life (a reload is not a departure), lets
+    running jobs finish (translation, AI index), then unloads the models and stops Ollama.
+    When a page comes back, Ollama is started again if this app stopped it."""
+
+    def __init__(self, ollama: Ollama, host: Callable[[], str], enabled: Callable[[], bool],
+                 busy: Callable[[], bool], grace: float = 30.0, tick: float = 5.0):
+        self.ollama, self.host, self.enabled, self.busy = ollama, host, enabled, busy
+        self.grace, self.tick = grace, tick
+        self.last_seen: float | None = None
+        self.released = False
+        self.log: list[str] = []
+        self._thread: threading.Thread | None = None
+
+    def alive(self) -> None:
+        self.last_seen = time.time()
+        if self.released or self.ollama.stopped_by_us:
+            self.released = False
+            if self.ollama.stopped_by_us and not self.ollama.running(self.host()):
+                self.ollama.start()  # the page is back: Ollama as it was
+                self.log.append("restarted")
+        if self._thread is None:
+            self._thread = threading.Thread(target=self._watch, daemon=True)
+            self._thread.start()
+
+    def left(self) -> None:
+        # the page is closing; give a reload `grace` seconds to say hello again
+        if self.last_seen is not None:
+            self.last_seen = min(self.last_seen, time.time())
+
+    def check(self, now: float | None = None) -> bool:
+        """Release if nobody is here any more; True when it released."""
+        now = now or time.time()
+        if (self.released or self.last_seen is None or not self.enabled()
+                or now - self.last_seen < self.grace or self.busy()):
+            return False
+        host = self.host()
+        if not self.ollama.running(host):
+            self.released = True
+            return False
+        self.log.append("unloaded " + ", ".join(self.ollama.unload_all(host)))
+        if self.ollama.stop():
+            self.log.append("stopped")
+        self.released = True
+        return True
+
+    def _watch(self) -> None:
+        while True:
+            time.sleep(self.tick)
+            try:
+                self.check()
+            except Exception as exc:  # never kill the watcher
+                self.log.append(f"error {exc}")
 
     # ------------------------------------------------------------------ download
     def pull(self, host: str, model: str) -> None:

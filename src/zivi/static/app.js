@@ -1141,6 +1141,10 @@ async function renderOllamaBox(box, model, host) {
     html = row("warn", t("Ollama {version} est prêt, mais le modèle {model} n’est pas installé.", { version: esc(st.version || ""), model: m }) + err,
       `<button type="button" class="btn primary" data-ol="pull">${t("Télécharger le modèle")}</button>`);
   }
+  if (st && (st.running || st.installed)) { // free the memory once the page is gone
+    html += `<label class="ol-auto" title="${esc(t("Environ une minute et demie après la fermeture de la dernière page, les modèles sont retirés de la mémoire et Ollama est arrêté, sauf pendant une traduction ou la construction d’un index. Il redémarre à la prochaine visite."))}">
+      <input type="checkbox" data-ol-auto ${st.auto_stop ? "checked" : ""}> ${t("Libérer la mémoire et arrêter Ollama quand la page est fermée")}</label>`;
+  }
   box.innerHTML = html;
   if (pull && !pull.running && pull.done && box.dataset.pulled !== model) { // just finished
     box.dataset.pulled = model;
@@ -1160,6 +1164,18 @@ document.addEventListener("click", async (e) => {
   } catch (err) { alert(err.message); }
   renderOllamaBox(box, model, host);
 });
+
+document.addEventListener("change", async (e) => {
+  const cb = e.target.closest("[data-ol-auto]"); if (!cb) return;
+  try { await api("/api/ollama/auto-stop", { on: cb.checked }); } catch (err) { alert(err.message); }
+  for (const other of $$("[data-ol-auto]")) other.checked = cb.checked; // both boxes agree
+});
+/* The server frees Ollama (models out of memory, then stopped) ~90 s after the last page
+   is gone: tell it this page is open, and when it closes. */
+const alive = () => fetch("/api/alive", { method: "POST" }).catch(() => {});
+setInterval(alive, 20000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) alive(); });
+window.addEventListener("pagehide", () => navigator.sendBeacon?.("/api/leave"));
 
 /* in Recherche IA, only for a model served by this computer */
 const isLocal = (url) => /\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(url || "");
@@ -1338,5 +1354,6 @@ $(`input[name=trEngine][value=${store.get("zivi.trEngine", "ollama") === "browse
 $("#favOnly").setAttribute("aria-pressed", String(!!S.favorites_only));
 document.body.classList.toggle("fav-mode", !!S.favorites_only);
 api("/api/prefs", { lang: LANG }).catch(() => {}); // translations and AI index follow the interface
+alive(); // restarts Ollama if it was stopped when the last page left
 loadTrSettings().then(refreshTrStats);
 loadLabels().finally(runSearchNow);

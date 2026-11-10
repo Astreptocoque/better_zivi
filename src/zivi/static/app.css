@@ -441,6 +441,11 @@ dialog.panel::backdrop { background: rgba(10, 20, 15, .38); backdrop-filter: blu
 .ollama-box .progress { flex-basis: 100%; margin: .2rem 0 0; }
 .ollama-box .err { color: var(--red); }
 #aiOllamaBox { margin-top: .6rem; }
+.ollama-box .ol-auto {
+  flex-basis: 100%; display: flex !important; align-items: center; gap: .45rem; margin: .2rem 0 0 !important;
+  padding-top: .45rem; border-top: 1px solid var(--line); font-size: .84rem; color: var(--slate) !important; cursor: pointer;
+}
+.ollama-box .ol-auto input { accent-color: var(--spruce); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
 .form-grid label, .inline-select { margin: .3rem 0 .5rem; }
 .panel input[type=url], .panel input[type=text], .panel input[type=password], .panel select { border-radius: 8px; padding: .5rem .6rem; }

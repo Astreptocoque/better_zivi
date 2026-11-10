@@ -601,3 +601,45 @@ def test_keyword_search_covers_metadata(store):
     # words from a description field and from the metadata combine
     title_word = e.rows[a[0]]["title"].split()[0]
     assert a[0] in ids_of(f"{title_word} {last_name}")
+
+
+def test_ollama_released_after_the_page_left():
+    from zivi.ollama import PageWatch
+
+    class FakeOllama:
+        def __init__(self):
+            self.up, self.stopped_by_us, self.calls = True, False, []
+
+        def running(self, host):
+            return self.up
+
+        def unload_all(self, host):
+            self.calls.append("unload")
+            return ["translategemma:4b", "nomic-embed-text:latest"]
+
+        def stop(self):
+            self.calls.append("stop")
+            self.up, self.stopped_by_us = False, True
+            return True
+
+        def start(self):
+            self.calls.append("start")
+            self.up, self.stopped_by_us = True, False
+            return True
+
+    ol, busy, enabled = FakeOllama(), [False], [True]
+    w = PageWatch(ol, host=lambda: "h", enabled=lambda: enabled[0], busy=lambda: busy[0],
+                  grace=30, tick=3600)
+    assert not w.check()  # no page seen yet: nothing to do
+    w.alive()
+    t0 = w.last_seen
+    assert not w.check(t0 + 10)  # page still recent (a reload)
+    busy[0] = True
+    assert not w.check(t0 + 60) and ol.calls == []  # a translation still runs
+    busy[0] = False
+    assert w.check(t0 + 60) and ol.calls == ["unload", "stop"] and not ol.up
+    assert not w.check(t0 + 120)  # once only
+    w.alive()  # the page is back: Ollama again
+    assert ol.up and ol.calls[-1] == "start"
+    enabled[0] = False  # option off: never released
+    assert not w.check(w.last_seen + 600)
