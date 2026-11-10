@@ -332,6 +332,20 @@ button.rare-chip:hover { border-color: #8A5CD6; }
 .leaflet-popup-content h4 { margin: 0 0 .2rem; font-size: 1rem; }
 .leaflet-popup-content .who { color: #55635E; }
 .pick-mode #map { cursor: crosshair; }
+.map-full-btn {
+  width: 34px; height: 34px; display: grid; place-items: center; padding: 0; cursor: pointer;
+  background: #fff; color: #333; border: 2px solid rgba(0, 0, 0, .2) !important; border-radius: 4px;
+}
+.map-full-btn:hover { background: #f4f4f4; }
+.map-full-btn svg { width: 16px; height: 16px; }
+.map-full-btn[aria-pressed=true] { color: var(--spruce); }
+/* full-screen map: only the map (and the detail panel over it) */
+body.map-full .layout { grid-template-columns: 1fr; }
+body.map-full #filters, body.map-full #results { display: none; }
+@media (max-width: 980px) { /* phones show one pane at a time already */
+  .map-full-btn { display: none; }
+  body.map-full .pane.on { display: block; }
+}
 
 /* ---- drawer */
 .drawer { position: fixed; inset: 0; z-index: 2000; background: rgba(10, 20, 15, .35); display: flex; justify-content: flex-end; }

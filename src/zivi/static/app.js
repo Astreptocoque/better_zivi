@@ -142,6 +142,40 @@ function pie(bySector, total) {
   });
   return `conic-gradient(${stops.join(", ")})`;
 }
+/* Full-screen map: filters and list hidden, the map alone; the detail panel still opens
+   over it when a point is clicked. The button sits under the zoom controls. */
+const ICON_FULL = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ICON_EXIT = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2.5V6H2.5M13.5 6H10V2.5M10 13.5V10h3.5M2.5 10H6v3.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const FullControl = L.Control.extend({
+  options: { position: "topleft" },
+  onAdd() {
+    const b = L.DomUtil.create("button", "map-full-btn leaflet-bar");
+    b.type = "button";
+    L.DomEvent.disableClickPropagation(b);
+    b.addEventListener("click", () => setMapFull(!document.body.classList.contains("map-full")));
+    this.btn = b;
+    return b;
+  },
+});
+const fullControl = new FullControl().addTo(map);
+function renderFullBtn() {
+  const on = document.body.classList.contains("map-full");
+  const label = on ? t("Quitter la carte en plein écran") : t("Carte en plein écran");
+  fullControl.btn.innerHTML = on ? ICON_EXIT : ICON_FULL;
+  fullControl.btn.title = label;
+  fullControl.btn.setAttribute("aria-label", label);
+  fullControl.btn.setAttribute("aria-pressed", String(on));
+}
+function setMapFull(on) {
+  document.body.classList.toggle("map-full", on);
+  store.set("zivi.mapFull", on);
+  renderFullBtn();
+  setTimeout(() => map.invalidateSize(), 60);
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && document.body.classList.contains("map-full") && $("#drawer").hidden
+      && !document.querySelector("dialog[open]") && $("#adv").hidden && $("#langList").hidden) setMapFull(false);
+});
 const circles = L.layerGroup().addTo(map);
 const dotIcons = {};
 const dotIcon = (code, fav) => (dotIcons[`${code}|${fav}`] ||= L.divIcon({
@@ -1322,7 +1356,7 @@ async function chooseLang(lang) {
 }
 /* everything drawn by the script, in the new language */
 function refreshUi() {
-  renderLangMenu(); renderLayerControl(); renderCenters();
+  renderLangMenu(); renderLayerControl(); renderCenters(); renderFullBtn();
   runSearchNow();
   if (openId != null && !$("#drawer").hidden) openDetail(openId);
   if ($("#dbDlg").open) showSection(panelSec); else refreshTrStats();
@@ -1347,6 +1381,7 @@ showPane("results");
 setLang(LANG); // translates the static page
 renderLangMenu();
 renderLayerControl();
+setMapFull(!!store.get("zivi.mapFull", false));
 bindInputs();
 $("#optViewTr").checked = !!S.view_tr;
 $("#optSearchOrig").checked = S.search_original !== false;

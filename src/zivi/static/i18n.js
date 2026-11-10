@@ -126,6 +126,7 @@ const I18N = {
     "Le téléchargement a échoué : {error}": "Der Download ist fehlgeschlagen: {error}",
     "Ollama {version} est prêt, mais le modèle {model} n’est pas installé.": "Ollama {version} ist bereit, aber das Modell {model} ist nicht installiert.",
     "Télécharger le modèle": "Modell herunterladen",
+    "Carte en plein écran": "Karte im Vollbild", "Quitter la carte en plein écran": "Vollbild der Karte verlassen",
     "Libérer la mémoire et arrêter Ollama quand la page est fermée": "Speicher freigeben und Ollama beenden, wenn die Seite geschlossen wird",
     "Environ une minute et demie après la fermeture de la dernière page, les modèles sont retirés de la mémoire et Ollama est arrêté, sauf pendant une traduction ou la construction d’un index. Il redémarre à la prochaine visite.": "Etwa anderthalb Minuten nach dem Schliessen der letzten Seite werden die Modelle aus dem Speicher entfernt und Ollama beendet, ausser während einer Übersetzung oder der Erstellung eines Index. Beim nächsten Besuch startet es wieder.",
     // ---- AI search
@@ -321,6 +322,7 @@ const I18N = {
     "Le téléchargement a échoué : {error}": "Il download non è riuscito: {error}",
     "Ollama {version} est prêt, mais le modèle {model} n’est pas installé.": "Ollama {version} è pronto, ma il modello {model} non è installato.",
     "Télécharger le modèle": "Scarica il modello",
+    "Carte en plein écran": "Carta a schermo intero", "Quitter la carte en plein écran": "Esci dalla carta a schermo intero",
     "Libérer la mémoire et arrêter Ollama quand la page est fermée": "Libera la memoria e chiudi Ollama quando la pagina viene chiusa",
     "Environ une minute et demie après la fermeture de la dernière page, les modèles sont retirés de la mémoire et Ollama est arrêté, sauf pendant une traduction ou la construction d’un index. Il redémarre à la prochaine visite.": "Circa un minuto e mezzo dopo la chiusura dell’ultima pagina, i modelli vengono tolti dalla memoria e Ollama viene chiuso, tranne durante una traduzione o la creazione di un indice. Si riavvia alla visita successiva.",
     // ---- AI search
