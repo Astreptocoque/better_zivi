@@ -252,10 +252,20 @@ async function runSearchNow() {
   renderFacets(res.facets || {});
   drawPoints(res.points || []);
   setFavCount(res.favorites);
+  renderMapKey(res.facets?.sector || []);
   $("#mapInfo").textContent = tn(res.points.length, "{n} lieu sur la carte", "{n} lieux sur la carte") +
     (res.unlocated ? ` · ${tn(res.unlocated, "{n} résultat sans localisation", "{n} résultats sans localisation")}` : "");
 }
 const runSearch = debounce(runSearchNow, 250);
+/* Colour key of the map, shown when the "i" next to the place count is hovered or focused:
+   the sectors of the current results, the pie bubbles, the favourite ring. */
+function renderMapKey(sectors) {
+  const rows = [...sectors].sort(([a], [b]) => (+sectorCode(a) || 99) - (+sectorCode(b) || 99));
+  $("#mapKey").innerHTML = `<b>${t("Couleurs : domaine d’activité")}</b>
+    <ul>${rows.map(([k, n]) => `<li><i class="swatch" style="--c:${sectorColor(sectorCode(k))}"></i><span>${esc(sectorName(k))}</span><small>${nf(n)}</small></li>`).join("")}</ul>
+    <p><span class="key-pie" aria-hidden="true"></span>${t("Bulle : plusieurs affectations proches, en parts par domaine ; le nombre au centre.")}</p>
+    <p><span class="dot fav key-fav" aria-hidden="true"></span>${t("Anneau doré : favori.")}</p>`;
+}
 
 async function loadMore() {
   offset += PAGE;

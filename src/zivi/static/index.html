@@ -184,7 +184,11 @@
 
   <section class="pane mapwrap" id="mapPane" aria-label="Carte">
     <div id="map"></div>
-    <div class="map-legend" id="mapInfo"></div>
+    <div class="map-legend" id="mapInfoBox">
+      <span id="mapInfo"></span>
+      <button type="button" class="info-i" id="mapKeyBtn" aria-describedby="mapKey" aria-label="Légende des couleurs">i</button>
+      <div class="map-key" id="mapKey" role="tooltip"></div>
+    </div>
   </section>
 </main>
 
