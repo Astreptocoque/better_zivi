@@ -2,9 +2,25 @@
 
 A local search engine and map for ZiviConnect civil-service assignments
 (*cahiers des charges*). Load the JSON export, then filter by every attribute, search the
-text, and see every result on a map of Switzerland.
+text, and see every result on a map of Switzerland. The interface is in French, German or
+Italian.
 
-![layout: filters | results | map](docs/screenshot.png)
+![Filters, results and map, interface in French](docs/screenshot.png)
+
+<table>
+  <tr>
+    <td width="33%"><img src="docs/screenshot-rarity.png" alt="Rarest assignments first, filtered on night work, interface in German"></td>
+    <td width="33%"><img src="docs/screenshot-detail.png" alt="An assignment in German, interface in Italian"></td>
+    <td width="33%"><img src="docs/screenshot-ai.png" alt="AI search settings with a local Ollama model"></td>
+  </tr>
+  <tr>
+    <td>✨ Rare traits first, filtered on night work (German)</td>
+    <td>Detail panel, with its rare traits and a translate button (Italian)</td>
+    <td>AI search settings with a local Ollama model (French)</td>
+  </tr>
+</table>
+
+The screenshots use fictional data (made-up establishments and contacts in real Swiss towns).
 
 ## Quick start (Windows)
 
@@ -46,6 +62,14 @@ JSON…**, or from the terminal with `uv run zivi import <file>.json`.
 1 in Italian) in the same format, so you can try every feature without an account. Their
 contact persons, e-mails and phone numbers are fictional.
 
+## Languages
+
+The flag menu in the top bar switches the whole interface between **Français**, **Deutsch**
+and **Italiano**: texts, numbers and dates, and the coded values of the data (sectors, task
+types, working-hours models) in their official wording from the export. The first visit uses
+the browser's language. The interface language also chooses which translation of the
+assignments is shown and which AI index is used (below).
+
 ## What you can filter
 
 | Filter | Notes |
@@ -83,16 +107,18 @@ current results with contact details (opens directly in Excel).
 - **Base de données**: counts, the imported file and its date, where the database file is,
   **Charger un export JSON…**, and under *Options avancées* buttons to clear the favourites,
   the translations or the AI index.
-- **Traduction**: translates every German and Italian assignment into French (below).
+- **Traduction**: translates the assignments into the interface language (below).
 - **Recherche IA**: the AI search settings and index (below).
 
 ## Translating the whole database
 
 **Base de données → Traduction → Traduire la base** translates the titles, tasks, skills,
-employer descriptions, courses and application notes of every non-French assignment
-(~9,800 distinct texts, ~3 million characters) into French, on this computer: free, and
-nothing is sent anywhere. Titles go first. Each text is saved as it is done (`translations`
-table, kept across re-imports), so **Pause** and **Reprendre** pick up where it stopped.
+employer descriptions, courses and application notes of every assignment written in another
+language into the **interface language** (into French: ~9,800 distinct texts, ~3 million
+characters), on this computer: free, and nothing is sent anywhere. Titles go first. Each text
+is saved as it is done (`translations` table, kept across re-imports), so **Pause** and
+**Reprendre** pick up where it stopped. Each language keeps its own translations: switching
+the interface to German and translating again adds German ones without touching the French.
 
 Two engines:
 
@@ -108,10 +134,11 @@ Two engines:
 
 Options:
 
-- **Afficher les affectations en français** shows the translated titles in the list and on
-  the map, and opens entries in French (with *Voir l'original*).
-- **Chercher aussi dans le texte original** (on by default) searches the French text and the
-  original. Turn it off to search only French text (originals in French plus translations).
+- **Afficher les affectations dans la langue de l'interface** shows the translated titles in
+  the list and on the map, and opens entries translated (with *Voir l'original*).
+- **Chercher aussi dans le texte original** (on by default) searches the translated text and
+  the original. Turn it off to search only text in the interface language (originals in that
+  language plus translations).
 
 Without the whole-database translation, the **Traduire** button in an entry translates just
 that entry on the fly with the browser's translator.
@@ -129,11 +156,14 @@ Works with any OpenAI-compatible embeddings API: OpenAI, Mistral, or a local
 [Ollama](https://ollama.com) (no token needed). With a local model, the same Ollama box as in
 Traduction shows whether the model is installed and downloads it in one click.
 
-**Construire l'index sur le texte français** builds the index from the French translation
-where there is one (and the original otherwise). With a model trained mostly on English,
-such as `nomic-embed-text`, a French query then finds German and Italian assignments much
-better. The section shows how many assignments the next build will (re)compute: newly
-translated ones, new assignments, and any left over from an interrupted build.
+**Construire l'index dans la langue de l'interface** builds the index from the translation
+into the interface language where there is one (and the original otherwise). With a model
+trained mostly on English, such as `nomic-embed-text`, a query in that language then finds
+assignments written in the others much better. Each language has its own index (stored as
+`model@fr`, `model@de`…): switching the interface language loads that language's index and
+never erases another one; the section lists the indexes already built. It also shows how
+many assignments the next build will (re)compute: newly translated ones, new assignments, and
+any left over from an interrupted build.
 The token is kept only in the local server's memory, never written to disk. The chosen
 provider URL and model are saved in `data/ai_settings.json`, so after a restart the matching
 index (for example a local Ollama one) is loaded again without opening the settings. Tick
@@ -169,6 +199,10 @@ JSON export ──► converter ──► SQLite store (data/zivi.sqlite)
 - `src/zivi/search.py` filters, ranks (bm25, cosine similarity, or both fused) and computes
   facet counts.
 - `src/zivi/semantic.py` builds and queries the embedding index.
+- `src/zivi/ollama.py` detects, starts and downloads Ollama models and runs the translation job.
+- `src/zivi/messages.py`: messages for people are sent as codes the page translates.
+- `src/zivi/static/i18n.js` holds the German and Italian interface texts (French is the
+  source in `app.js` and `index.html`).
 
 If assignments don't appear on the map, run `uv run zivi doctor <file.json>`; it shows how
 the addresses in the file are structured and parsed.

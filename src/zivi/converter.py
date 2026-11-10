@@ -24,8 +24,10 @@ from pathlib import Path
 from typing import Any
 
 from .geocode import Geocoder
+from .messages import ZiviError, msg, text_of
 
-Progress = Callable[[str, float], None]
+# progress(message, fraction): message is a translatable {"key", "params", "text"}
+Progress = Callable[[dict, float], None]
 
 SCHEMA = """
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
@@ -82,6 +84,51 @@ def fts_metadata(a: dict, locations: list[dict]) -> tuple[str, str, str]:
                                         (a.get("canton") or "").replace(",", " "), compact)
                        if x)
     return contact, address, details
+
+
+LABEL_LANGS = (("fr", "de", "it"), ("textFr", "textDe", "textIt"))
+LABELS_VERSION = "2"  # bump when LABEL_FIXES changes: existing databases rebuild the table
+# Wrong translations in the ZiviConnect export itself (its Italian label of sector 7 is the
+# German one with a stray "I"): French label -> corrected {language: label}
+LABEL_FIXES = {
+    "7 Prévention et maîtrise des catastrophes et des situations d'urgence, rétablissement "
+    "après de tels événements": {
+        "it": "7 Prevenzione e gestione delle catastrofi e delle situazioni d'emergenza, "
+              "ripristino dopo tali eventi"},
+}
+
+
+def label_map(db: sqlite3.Connection) -> dict[str, dict[str, str]]:
+    """French label -> {"de": …, "it": …} for every coded value of the raw export (sector,
+    task types, working-hours model, courses, cantons…), so the page can show the data in
+    the interface language. Sector labels are also mapped without their code ('Social')."""
+    out: dict[str, dict[str, str]] = {}
+
+    def walk(v: Any) -> None:
+        if isinstance(v, dict):
+            for fr, de, it in LABEL_LANGS:
+                if all(isinstance(v.get(k), str) and v.get(k) for k in (fr, de, it)):
+                    out.setdefault(v[fr], {"de": v[de], "it": v[it]})
+                    bare = [re.sub(r"^\s*\d+\s+", "", v[k]) for k in (fr, de, it)]
+                    if bare[0] != v[fr]:
+                        out.setdefault(bare[0], {"de": bare[1], "it": bare[2]})
+            for x in v.values():
+                walk(x)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x)
+
+    for (raw,) in db.execute("SELECT raw FROM assignments WHERE raw IS NOT NULL"):
+        try:
+            walk(json.loads(raw))
+        except ValueError:
+            continue
+    for fr, fixes in LABEL_FIXES.items():
+        for target in (fr, re.sub(r"^\s*\d+\s+", "", fr)):
+            if target in out:
+                out[target].update({k: v if target == fr else re.sub(r"^\s*\d+\s+", "", v)
+                                    for k, v in fixes.items()})
+    return out
 
 
 def build_fts(db: sqlite3.Connection, table: str = "fts") -> int:
@@ -462,15 +509,15 @@ def convert(json_path: str | Path, db_path: str | Path, *, geocoder_factory=None
 
     The geocoding cache of an existing database is kept, so re-imports are fast.
     """
-    say = progress or (lambda msg, frac: print(f"[{frac:5.0%}] {msg}"))
+    say = progress or (lambda m, frac: print(f"[{frac:5.0%}] {text_of(m)}"))
     json_path, db_path = Path(json_path), Path(db_path)
-    say("Lecture du JSON", 0.0)
+    say(msg("import_read"), 0.0)
     with json_path.open(encoding="utf-8-sig") as fh:
         data = json.load(fh)
     meta = data.get("meta", {}) if isinstance(data, dict) else {}
     records = list(iter_records(data))
     if not records:
-        raise ValueError("Aucune affectation trouvée dans ce fichier JSON.")
+        raise ZiviError("import_empty")
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = db_path.with_suffix(".building")
@@ -506,9 +553,9 @@ def convert(json_path: str | Path, db_path: str | Path, *, geocoder_factory=None
             unknown.update(k for k in det if k not in KNOWN_DETAIL_KEYS)
             missing.update(k for k in KNOWN_DETAIL_KEYS - {"merkliste"} if k not in det)
         if i % 500 == 0:
-            say(f"Analyse des fiches {i}/{len(records)}", 0.05 + 0.15 * i / len(records))
+            say(msg("import_parse", i=i, n=len(records)), 0.05 + 0.15 * i / len(records))
 
-    say(f"Écriture de {len(normalised)} affectations", 0.2)
+    say(msg("import_write", n=len(normalised)), 0.2)
     cols = list(normalised[0]["row"].keys())
     db.executemany(f"INSERT INTO assignments({','.join(cols)}) VALUES "
                    f"({','.join('?' * len(cols))})",
@@ -557,11 +604,11 @@ def convert(json_path: str | Path, db_path: str | Path, *, geocoder_factory=None
                    (",".join(sorted(set(cantons))) or None, int(abroad), row["id"]))
         if i % 100 == 0:
             db.commit()
-            say(f"Géolocalisation {i}/{total}", 0.25 + 0.65 * i / total)
+            say(msg("import_geocode", i=i, n=total), 0.25 + 0.65 * i / total)
     db.executemany("INSERT INTO locations VALUES (?,?,?,?,?,?,?,?,?,?)", loc_rows)
 
     # ---- full-text index
-    say("Construction de l'index plein texte", 0.92)
+    say(msg("import_fts"), 0.92)
     db.commit()
     build_fts(db)
 
@@ -589,7 +636,7 @@ def convert(json_path: str | Path, db_path: str | Path, *, geocoder_factory=None
         shutil.copyfile(db_path, backup)
         db_path.unlink()
     tmp.rename(db_path)
-    say(f"Terminé : {report['assignments']} affectations, {located} localisées", 1.0)
+    say(msg("import_done", n=report["assignments"], located=located), 1.0)
     return report
 
 

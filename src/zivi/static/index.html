@@ -23,7 +23,7 @@
               title="Recherche avancée" aria-label="Recherche avancée">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 6 8 10.5 12.5 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
-      <div class="q-hint" id="qHint" role="tooltip">
+      <div class="q-hint" id="qHint" role="tooltip" data-i18n-html="qhint">
         <b>Comment chercher</b>
         <dl>
           <dt><code>jardin cuisine</code></dt><dd>tous les mots doivent figurer</dd>
@@ -49,7 +49,7 @@
           <input type="text" data-adv="any" placeholder="chien chat cheval" autocomplete="off"></label>
         <label>Aucun de ces mots
           <input type="text" data-adv="none" placeholder="nuit week-end" autocomplete="off"></label>
-        <p class="adv-note">Un mot trouve aussi les mots qui commencent pareil (<i>pflege</i> → <i>Pflegeheim</i>).
+        <p class="adv-note" data-i18n-html="advnote">Un mot trouve aussi les mots qui commencent pareil (<i>pflege</i> → <i>Pflegeheim</i>).
           Accents et majuscules ignorés.</p>
         <p class="adv-preview">Requête : <code id="advPreview">—</code></p>
         <div class="adv-actions"><button type="button" class="btn primary" id="advDone">Fermer</button></div>
@@ -62,6 +62,10 @@
     </div>
   </form>
   <div class="actions">
+    <div class="lang-menu" id="langMenu" data-i18n-skip>
+      <button type="button" class="btn lang-btn" id="langBtn" aria-haspopup="listbox" aria-expanded="false"></button>
+      <ul class="lang-list" id="langList" role="listbox" hidden></ul>
+    </div>
     <button class="btn fav-toggle" id="favOnly" type="button" aria-pressed="false" title="Afficher uniquement les favoris"><span class="star" aria-hidden="true">★</span> Favoris <small id="favCount">0</small></button>
     <button class="btn db-btn" id="dbBtn" type="button" aria-haspopup="dialog"
             title="Base de données : import, traduction, recherche IA">
@@ -246,8 +250,9 @@
 
       <!-- ===================================================== translation -->
       <section class="panel-sec" data-sec="tr" hidden>
-        <p class="lead">Traduit en français les affectations rédigées en allemand et en italien. Le modèle
-          tourne sur cet ordinateur : gratuit, et rien n’est envoyé sur Internet.</p>
+        <p class="lead">Traduit dans la langue de l’interface les affectations rédigées dans une autre langue.
+          Le modèle tourne sur cet ordinateur : gratuit, et rien n’est envoyé sur Internet. Chaque langue garde
+          ses propres traductions.</p>
         <div class="card">
           <h3>Moteur de traduction</h3>
           <div class="choices" role="radiogroup" aria-label="Moteur de traduction">
@@ -287,14 +292,14 @@
         </div>
         <div class="card">
           <h3>Affichage et recherche</h3>
-          <label class="switch"><input type="checkbox" id="optViewFr">
-            <span><b>Afficher les affectations en français</b>
+          <label class="switch"><input type="checkbox" id="optViewTr">
+            <span><b>Afficher les affectations dans la langue de l’interface</b>
               <small>Titres, tâches et descriptions traduits dans la liste, la carte et la fiche.
                 La fiche garde un bouton « Voir l’original ».</small></span></label>
           <label class="switch"><input type="checkbox" id="optSearchOrig" checked>
             <span><b>Chercher aussi dans le texte original</b>
-              <small>Désactivé : seuls les textes en français (originaux ou traduits) sont cherchés, et une
-                affectation pas encore traduite ne ressort pas.</small></span></label>
+              <small>Désactivé : seuls les textes dans la langue de l’interface (originaux ou traduits) sont
+                cherchés, et une affectation pas encore traduite ne ressort pas.</small></span></label>
         </div>
       </section>
 
@@ -305,11 +310,9 @@
           sans jeton. Le jeton reste dans la mémoire du serveur local et n’est jamais écrit sur le disque.</p>
         <div class="card">
           <h3>Index</h3>
-          <label class="switch"><input type="checkbox" id="aiFrench">
-            <span><b>Construire l’index sur le texte français</b>
-              <small id="aiFrenchHint">Utilise la traduction française quand elle existe (Traduction), sinon le texte
-                original. Utile avec un modèle surtout anglais comme nomic-embed-text : une recherche en français
-                trouve alors mieux les affectations allemandes et italiennes.</small></span></label>
+          <label class="switch"><input type="checkbox" id="aiTranslated">
+            <span><b>Construire l’index dans la langue de l’interface</b>
+              <small id="aiTranslatedHint"></small></span></label>
           <p class="status" id="aiStatus" role="status"></p>
           <div class="progress" id="aiProg" hidden><div id="aiBar"></div></div>
           <div class="row-actions">
@@ -361,6 +364,7 @@
 
 <script src="/static/vendor/leaflet/leaflet.js"></script>
 <script src="/static/vendor/leaflet/leaflet.markercluster.js"></script>
+<script src="/static/i18n.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

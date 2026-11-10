@@ -464,7 +464,7 @@ def test_ollama_translation_job(store, monkeypatch):
     e = Engine(db)
     always_fails = e.translation_todo(1)[0]["text"]
 
-    def fake_translate(host, model, text, source, timeout=600.0):
+    def fake_translate(host, model, text, source, timeout=600.0, target="fr"):
         if text == always_fails:  # this one always times out
             raise ol.TranslateFailed("pas de réponse d'Ollama (ReadTimeout)")
         return "FR " + text
@@ -472,7 +472,7 @@ def test_ollama_translation_job(store, monkeypatch):
     monkeypatch.setattr(ol, "translate", fake_translate)
     job = ol.TranslationJob()
     job.run("h", "translategemma:4b", e.translation_todo, e.save_translations,
-            e.rebuild_fts_fr, pause=0)
+            e.rebuild_fts_tr, pause=0)
     p = job.progress
     st = e.translation_stats()
     assert p["error"] is None and not p["running"] and p["skipped"] >= 1
@@ -488,34 +488,89 @@ def test_ollama_status_and_host():
     assert st["running"] is False and st["models"] == [] and st["download_url"]
 
 
-def test_ai_index_on_french_text(store, monkeypatch):
+def test_ai_index_per_language(store, monkeypatch):
+    """Index on the text translated into the interface language: one set of vectors per
+    language, and switching language never erases another one."""
     db, _ = store
     import zivi.semantic as sem
     monkeypatch.setattr(sem.Embedder, "embed",
                         lambda self, t: np.ones((len(t), 3), dtype=np.float32))
     client = TestClient(create_app(db))
     client.post("/api/ai/config", json={"base_url": "http://localhost:11434/v1",
-                                        "model": "nomic"})
+                                        "model": "nomic", "lang": "fr"})
     e = Engine(db)
-    e.semantic.build(str(db), e.ai_texts(), e.ai, pause=0)
-    assert client.get("/api/ai").json()["pending"] == 0
-
-    # translate everything, then switch the index to French: only the translated ones change
-    todo = client.get("/api/translate/todo", params={"limit": 500}).json()["items"]
-    client.post("/api/translate/save", json={"items": [
-        {"hash": t["hash"], "text": f"FR {t['text']}"} for t in todo]})
+    e.semantic.build(str(db), e.ai_texts(), e.ai, pause=0, key=e.ai_index_key)
     info = client.get("/api/ai").json()
-    assert info["pending"] == 0 and info["french"] is False  # option off: nothing changes
-    client.post("/api/ai/config", json={"french": True})
+    assert info["pending"] == 0 and info["key"] == "nomic" and info["translated"] is False
+
+    # translate into French and into German
+    for lang, prefix in (("fr", "FR "), ("de", "DE ")):
+        todo = client.get("/api/translate/todo", params={"limit": 500, "lang": lang}).json()
+        client.post("/api/translate/save", json={"lang": lang, "items": [
+            {"hash": t["hash"], "text": prefix + t["text"]} for t in todo["items"]]})
+    assert client.get("/api/ai").json()["pending"] == 0  # option off: nothing changes
+
+    # index in the interface language: French first
+    client.post("/api/ai/config", json={"translated": True})
     info = client.get("/api/ai").json()
     cov = info["coverage"]
-    assert info["french"] is True and cov["translated"] + cov["french"] == cov["total"]
-    assert info["pending"] == cov["translated"]  # the French-language ones keep their vectors
+    assert info["key"] == "nomic@fr" and cov["native"] + cov["translated"] == cov["total"]
+    assert info["pending"] == cov["total"]  # a new index for this language
+    e = Engine(db)
+    e.semantic.build(str(db), e.ai_texts(), e.ai, pause=0, key=e.ai_index_key)
+    assert all(t.startswith("FR ") for i, t in e.ai_texts().items()
+               if e.rows[i].get("language") != "fr")
 
-    e2 = Engine(db)  # the option is saved, and the AI text is now the French one
-    assert e2.ai_french is True
-    assert all(t.startswith("FR ") for i, t in e2.ai_texts().items()
-               if e2.rows[i].get("language") != "fr")
+    # switch the interface to German: its own index, the French and original ones stay
+    client.post("/api/prefs", json={"lang": "de"})
+    info = client.get("/api/ai").json()
+    assert info["key"] == "nomic@de" and info["pending"] == info["coverage"]["total"]
+    assert set(info["built"]) == {"nomic", "nomic@fr"}
+    e = Engine(db)
+    assert e.ui_lang == "de" and e.ai_translated is True  # both saved
+    e.semantic.build(str(db), e.ai_texts(), e.ai, pause=0, key=e.ai_index_key)
+    assert set(client.get("/api/ai").json()["built"]) == {"nomic", "nomic@fr", "nomic@de"}
+
+    # deleting the German index keeps the others
+    client.delete("/api/ai/index")
+    assert set(client.get("/api/ai").json()["built"]) == {"nomic", "nomic@fr"}
+
+
+def test_translations_per_language(store):
+    db, _ = store
+    client = TestClient(create_app(db))
+    st_fr = client.get("/api/translate", params={"lang": "fr"}).json()
+    st_de = client.get("/api/translate", params={"lang": "de"}).json()
+    # German assignments need no German translation, French ones need none into French
+    assert st_fr["target"] == "fr" and st_de["target"] == "de"
+    for lang, prefix in (("fr", "FR zébrure "), ("de", "DE Zebrastreifen ")):
+        todo = client.get("/api/translate/todo", params={"limit": 500, "lang": lang}).json()
+        client.post("/api/translate/save", json={"lang": lang, "items": [
+            {"hash": t["hash"], "text": prefix + t["text"]} for t in todo["items"]]})
+        client.post("/api/translate/finish", params={"lang": lang})
+    # each language has its own keyword index and its own view
+    fr = client.post("/api/search", json={"text": "zebrure", "lang": "fr"}).json()["total"]
+    de = client.post("/api/search", json={"text": "zebrastreifen", "lang": "de"}).json()["total"]
+    assert fr == st_fr["assignments"] and de == st_de["assignments"]
+    view = client.post("/api/search", json={"view_lang": "de", "lang": "de"}).json()
+    assert any(it["title"].startswith("DE ") for it in view["items"])
+    one = next(it for it in view["items"] if it.get("title_orig"))
+    assert client.get(f"/api/assignment/{one['id']}", params={"lang": "de"}).json()["tr"]
+    # deleting the German translations keeps the French ones
+    client.delete("/api/translate", params={"lang": "de"})
+    assert client.get("/api/translate", params={"lang": "de"}).json()["done"] == 0
+    assert client.get("/api/translate", params={"lang": "fr"}).json()["done"] == st_fr["texts"]
+
+
+def test_messages_are_codes(store):
+    db, _ = store
+    client = TestClient(create_app(db))
+    r = client.get("/api/assignment/999999")
+    assert r.status_code == 404 and r.json()["detail"]["key"] == "unknown_assignment"
+    w = client.post("/api/search", json={"text": "x", "text_mode": "semantic"}).json()["warnings"]
+    assert w and all("key" in m and "text" in m for m in w)
+    labels = client.get("/api/labels").json()
+    assert isinstance(labels, dict)
 
 
 def test_keyword_search_covers_metadata(store):

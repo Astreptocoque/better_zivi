@@ -20,6 +20,8 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from .messages import ZiviError, as_msg, msg
+
 DEFAULT_HOST = "http://127.0.0.1:11434"
 DOWNLOAD_URL = "https://ollama.com/download"
 TRANSLATE_MODEL = "translategemma:4b"
@@ -103,7 +105,7 @@ class Ollama:
         with self._lock:
             if self.pulls.get(model, {}).get("running"):
                 return
-            self.pulls[model] = {"running": True, "status": "démarrage", "completed": 0,
+            self.pulls[model] = {"running": True, "status": "", "completed": 0,
                                  "total": 0, "error": None, "done": False}
         threading.Thread(target=self._pull, args=(host, model), daemon=True).start()
 
@@ -114,46 +116,47 @@ class Ollama:
                               timeout=httpx.Timeout(60.0, read=600.0)) as r:
                 if r.status_code >= 400:
                     r.read()
-                    raise RuntimeError(f"Ollama a répondu {r.status_code} : {r.text[:200]}")
+                    raise ZiviError("ollama_http", status=r.status_code, body=r.text[:200])
                 for line in r.iter_lines():
                     if not line.strip():
                         continue
-                    msg = json.loads(line)
-                    if msg.get("error"):
-                        raise RuntimeError(msg["error"])
-                    p["status"] = msg.get("status", p["status"])
-                    if msg.get("total"):  # one layer at a time: keep the biggest
-                        if msg["total"] >= p["total"]:
-                            p["total"], p["completed"] = msg["total"], msg.get("completed", 0)
-                    if msg.get("status") == "success":
+                    m = json.loads(line)
+                    if m.get("error"):
+                        raise ZiviError(m["error"])  # Ollama's own text, shown as is
+                    p["status"] = m.get("status", p["status"])
+                    if m.get("total"):  # one layer at a time: keep the biggest
+                        if m["total"] >= p["total"]:
+                            p["total"], p["completed"] = m["total"], m.get("completed", 0)
+                    if m.get("status") == "success":
                         p["done"] = True
         except Exception as exc:  # reported to the UI
-            p["error"] = str(exc)
+            p["error"] = as_msg(exc)
         finally:
             p["running"] = False
 
 
 # --------------------------------------------------------------------------- translation
 
-def translate_prompt(text: str, source: str | None, lines: int) -> str:
+def translate_prompt(text: str, source: str | None, lines: int, target: str = "fr") -> str:
     """TranslateGemma's documented prompt (works with general models too)."""
     name = LANG_NAMES.get(source or "", "")
-    lead = (f"You are a professional {name} ({source}) to French (fr) translator. "
-            if name else "You are a professional translator into French (fr). ")
+    tname = LANG_NAMES.get(target, target)
+    lead = (f"You are a professional {name} ({source}) to {tname} ({target}) translator. "
+            if name else f"You are a professional translator into {tname} ({target}). ")
     keep = (f"The text has {lines} lines: keep exactly the same line breaks. " if lines > 1 else "")
     return (f"{lead}Your goal is to accurately convey the meaning and nuances of the original "
-            f"{name or 'source'} text while adhering to French grammar, vocabulary, and cultural "
-            f"sensitivities.\nProduce only the French translation, without any additional "
-            f"explanations or commentary. {keep}Please translate the following "
-            f"{name or 'source'} text into French:\n\n\n{text}")
+            f"{name or 'source'} text while adhering to {tname} grammar, vocabulary, and "
+            f"cultural sensitivities.\nProduce only the {tname} translation, without any "
+            f"additional explanations or commentary. {keep}Please translate the following "
+            f"{name or 'source'} text into {tname}:\n\n\n{text}")
 
 
-class TranslateFailed(RuntimeError):
+class TranslateFailed(ZiviError):
     """This text failed (timeout, overload…); others may still work."""
 
 
 def translate(host: str, model: str, text: str, source: str | None,
-              timeout: float = 600.0) -> str:
+              timeout: float = 600.0, target: str = "fr") -> str:
     """One text through Ollama. Line breaks are kept: if the model merges or splits lines,
     the text is sent again line by line."""
     lines = text.split("\n")
@@ -162,18 +165,19 @@ def translate(host: str, model: str, text: str, source: str | None,
     def call(chunk: str, n: int) -> str:
         try:
             r = httpx.post(f"{host}/api/generate", timeout=httpx.Timeout(timeout, connect=10.0),
-                           json={"model": model, "prompt": translate_prompt(chunk, source, n),
+                           json={"model": model,
+                                 "prompt": translate_prompt(chunk, source, n, target),
                                  "stream": False, "keep_alive": "15m",
                                  "options": {"temperature": 0}})
         except (httpx.TimeoutException, httpx.TransportError) as exc:
-            raise TranslateFailed(f"pas de réponse d'Ollama ({type(exc).__name__})") from exc
+            raise TranslateFailed("ollama_no_response", kind=type(exc).__name__) from exc
         if r.status_code == 404:  # model not downloaded: retrying won't help
-            raise RuntimeError(f"le modèle {model} n'est pas installé dans Ollama")
+            raise ZiviError("ollama_model_missing", model=model)
         if r.status_code >= 400:
-            raise TranslateFailed(f"Ollama a répondu {r.status_code} : {r.text[:200]}")
+            raise TranslateFailed("ollama_http", status=r.status_code, body=r.text[:200])
         out = (r.json().get("response") or "").strip()
         if not out:
-            raise TranslateFailed("réponse vide")
+            raise TranslateFailed("empty_response")
         return out
 
     if len(body) <= 1:
@@ -199,9 +203,10 @@ class TranslationJob:
 
     def run(self, host: str, model: str, todo: Callable[[int], list[dict]],
             save: Callable[[list[dict]], int], refresh: Callable[[], None],
-            retries: int = 3, pause: float = 3.0) -> None:
+            retries: int = 3, pause: float = 3.0, target: str = "fr") -> None:
         self.cancel = False
         p = self.progress = {"running": True, "engine": "ollama", "model": model, "done": 0,
+                             "target": target,
                              "chars": 0, "skipped": 0, "error": None, "cancelled": False,
                              "note": None, "started": time.time(), "rate": 0.0}
         in_a_row = 0
@@ -216,11 +221,13 @@ class TranslationJob:
                     text = None
                     for attempt in range(retries):
                         try:
-                            text = translate(host, model, it["text"], it.get("lang"))
+                            text = translate(host, model, it["text"], it.get("lang"),
+                                             target=target)
                             p["note"] = None
                             break
                         except TranslateFailed as exc:
-                            p["note"] = f"nouvel essai {attempt + 1}/{retries - 1} : {exc}"
+                            p["note"] = msg("retry", attempt=attempt + 1, of=retries - 1,
+                                            error=as_msg(exc))
                             if attempt < retries - 1 and not self.cancel:
                                 time.sleep(pause * (attempt + 1))
                     if text is None:
@@ -228,7 +235,8 @@ class TranslationJob:
                         p["skipped"] += 1
                         in_a_row += 1
                         if in_a_row >= 25:
-                            raise RuntimeError(f"Ollama échoue sans arrêt ({p['note']})")
+                            raise ZiviError("ollama_failing", error=p["note"]["params"]["error"]
+                                            if p["note"] else "")
                         continue
                     in_a_row = 0
                     save([{"hash": it["hash"], "text": text, "lang": it.get("lang")}])
@@ -239,6 +247,6 @@ class TranslationJob:
                         refresh()  # keep the French search index close to current
             p["cancelled"] = self.cancel
         except Exception as exc:  # reported to the UI
-            p["error"] = str(exc)
+            p["error"] = as_msg(exc)
         finally:
             p["running"] = False

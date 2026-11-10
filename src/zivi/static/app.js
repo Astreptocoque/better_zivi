@@ -1,4 +1,5 @@
-/* Zivi search — front end. Plain JS + Leaflet; talks to the local FastAPI server. */
+/* Zivi search — front end. Plain JS + Leaflet; talks to the local FastAPI server.
+   Texts go through t() (i18n.js): French is the source, German and Italian come from there. */
 "use strict";
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -14,16 +15,18 @@ async function api(path, body) {
   const r = await fetch(path, body === undefined ? {} : {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
-  if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m; } catch { /* text */ } throw new Error(m); }
+  if (!r.ok) { let m = r.statusText; try { m = fmtMsg((await r.json()).detail) || m; } catch { /* text */ } throw new Error(m); }
   return r;
 }
+/* the interface language rides along with every request that depends on it */
+const withLang = (path) => `${path}${path.includes("?") ? "&" : "?"}lang=${LANG}`;
 
-const JNM = { J: "Oui", N: "Non", M: "Possible" };
-const YN = { 1: "Oui", 0: "Non" };
-const LANG = { de: "Allemand", fr: "Français", it: "Italien" };
+const JNM = (v) => ({ J: t("Oui"), N: t("Non"), M: t("Possible") }[v]);
+const YN = (v) => ({ 1: t("Oui"), 0: t("Non") }[v]);
+const LANG_NAMES = { de: "Allemand", fr: "Français", it: "Italien" }; // facet "Langue"
 const PAGE = 50;
-const nf = (n) => n.toLocaleString("fr-CH");
-const plural = (n, one, many) => `${nf(n)} ${n === 1 ? one : many}`;
+const nf = (n) => Number(n || 0).toLocaleString(LOCALE[LANG]);
+const COLON = () => (LANG === "fr" ? " : " : ": "); // French puts a space before the colon
 
 /* Sectors: the export labels them "2 Social", "5 Agriculture"…; the leading code picks the colour. */
 const SECTOR_COLORS = {
@@ -39,7 +42,24 @@ const SECTOR_COLORS = {
 const OTHER_COLOR = "#7A8580";
 const sectorCode = (label) => (String(label ?? "").match(/^\s*(\d+)/) || [])[1] || null;
 const sectorColor = (code) => SECTOR_COLORS[code] || OTHER_COLOR;
-const sectorName = (label) => String(label ?? "").replace(/^\s*\d+\s*/, "") || "Autre";
+const sectorName = (label) => dataLabel(String(label ?? "").replace(/^\s*\d+\s*/, "")) || t("Autre");
+
+/* Rare traits come from the server in French ("Travail de nuit" / "Oui"): shown here in
+   the interface language. The French value stays the filter key. */
+const FIELD_LABELS = {
+  sector: "Domaine", work_model: "Horaire", language: "Langue", canton: "Canton",
+  weekend: "Travail le week-end", night: "Travail de nuit", housing: "Logement", meals: "Repas",
+  reputation_check: "Contrôle de réputation", priority_program: "Programme prioritaire",
+  abroad: "À l’étranger", min_weeks: "Durée minimale", hours_per_week: "Heures par semaine",
+  task_areas: "Tâche",
+};
+const traitLabel = (field, fallback) => (FIELD_LABELS[field] ? t(FIELD_LABELS[field]) : fallback);
+function traitValue(field, value) {
+  if (["sector", "work_model", "task_areas"].includes(field)) return dataLabel(value);
+  if (field === "min_weeks") { const n = parseInt(value, 10); return Number.isNaN(n) ? value : tn(n, "{n} semaine", "{n} semaines"); }
+  if (field === "canton") return value;
+  return t(value); // Oui / Non / Possible, language names, hour ranges
+}
 
 /* ------------------------------------------------------------------ state */
 const blank = () => ({
@@ -51,10 +71,12 @@ const blank = () => ({
   min_weeks_min: "", min_weeks_max: "", hours_min: "", hours_max: "",
   task_areas: [], task_areas_mode: "any", canton: [], language: [], sector: [], work_model: [],
   favorites_only: false,
-  view_lang: "orig", search_original: true, // translation options (Base de données → Traduction)
+  view_tr: false, search_original: true, // translation options (Base de données → Traduction)
   traits: [], // rare traits clicked in the list: [{ field, value, label }]
 });
 let S = Object.assign(blank(), store.get("zivi.state", {}));
+if (S.view_lang === "fr") S.view_tr = true; // older setting: "show in French"
+delete S.view_lang;
 let lastResult = null;
 let offset = 0;
 let bbox = null;
@@ -70,7 +92,7 @@ function query(extra = {}) {
     task_areas: S.task_areas, task_areas_mode: S.task_areas_mode,
     canton: S.canton, language: S.language, sector: S.sector, work_model: S.work_model,
     favorites_only: S.favorites_only,
-    view_lang: S.view_lang, search_original: S.search_original,
+    lang: LANG, view_lang: S.view_tr ? LANG : "orig", search_original: S.search_original,
     traits: S.traits.map(({ field, value }) => ({ field, value })),
     limit: PAGE, offset: 0,
   };
@@ -93,7 +115,12 @@ const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
 });
 swissGrey.addTo(map);
-L.control.layers({ "Carte nationale (gris)": swissGrey, "Carte nationale (couleur)": swiss, "OpenStreetMap": osm }, null, { position: "topright" }).addTo(map);
+let layerControl = null;
+function renderLayerControl() { // names in the interface language
+  if (layerControl) layerControl.remove();
+  layerControl = L.control.layers({ [t("Carte nationale (gris)")]: swissGrey, [t("Carte nationale (couleur)")]: swiss, OpenStreetMap: osm },
+    null, { position: "topright" }).addTo(map);
+}
 const cluster = L.markerClusterGroup({
   showCoverageOnHover: false, maxClusterRadius: 40, spiderfyOnMaxZoom: true,
   iconCreateFunction: (c) => {
@@ -131,7 +158,7 @@ function drawPoints(points) {
     if (fav) favs.add(id); else favs.delete(id);
     const m = L.marker([lat, lon], { icon: dotIcon(sector, fav), title, sector: sector || "x" });
     m.bindPopup(() => `<h4>${esc(title)}</h4><div class="who">${esc(employer)}<br>${esc(place || "")}</div>
-      <p class="pop-actions"><button class="btn primary" data-open="${id}">Détails</button> ${favBtn(id)}</p>`);
+      <p class="pop-actions"><button class="btn primary" data-open="${id}">${t("Détails")}</button> ${favBtn(id)}</p>`);
     if (!markersById.has(id)) markersById.set(id, []);
     markersById.get(id).push(m);
     return m;
@@ -169,7 +196,7 @@ map.on("moveend", () => {
 });
 map.on("click", (e) => {
   if (!$("#clickAdd").checked) return;
-  addCenter({ label: `Point ${e.latlng.lat.toFixed(3)} ; ${e.latlng.lng.toFixed(3)}`, lat: e.latlng.lat, lon: e.latlng.lng });
+  addCenter({ label: `${t("Point")} ${e.latlng.lat.toFixed(3)} ; ${e.latlng.lng.toFixed(3)}`, lat: e.latlng.lat, lon: e.latlng.lng });
 });
 
 /* ------------------------------------------------------------------ search + render */
@@ -191,8 +218,8 @@ async function runSearchNow() {
   renderFacets(res.facets || {});
   drawPoints(res.points || []);
   setFavCount(res.favorites);
-  $("#mapInfo").textContent = plural(res.points.length, "lieu sur la carte", "lieux sur la carte") +
-    (res.unlocated ? ` · ${plural(res.unlocated, "résultat sans localisation", "résultats sans localisation")}` : "");
+  $("#mapInfo").textContent = tn(res.points.length, "{n} lieu sur la carte", "{n} lieux sur la carte") +
+    (res.unlocated ? ` · ${tn(res.unlocated, "{n} résultat sans localisation", "{n} résultats sans localisation")}` : "");
 }
 const runSearch = debounce(runSearchNow, 250);
 
@@ -204,26 +231,26 @@ async function loadMore() {
 }
 
 function renderCount(res) {
-  const mode = res.mode_used === "semantic" ? " · classées par l’IA" : res.mode_used === "hybrid" ? " · mots-clés + IA" : "";
-  const favNote = S.favorites_only ? " · favoris uniquement" : "";
-  $("#count").innerHTML = `<b>${nf(res.total)}</b> ${res.total === 1 ? "affectation" : "affectations"}${favNote}${mode}`;
+  const mode = res.mode_used === "semantic" ? ` · ${t("classées par l’IA")}` : res.mode_used === "hybrid" ? ` · ${t("mots-clés + IA")}` : "";
+  const favNote = S.favorites_only ? ` · ${t("favoris uniquement")}` : "";
+  $("#count").innerHTML = `<b>${nf(res.total)}</b> ${res.total === 1 ? t("affectation") : t("affectations")}${favNote}${mode}`;
   $("#sort").value = S.sort || "";
   $("#rarityBtn").setAttribute("aria-pressed", String(S.sort === "rarity"));
   document.body.classList.toggle("rarity-mode", S.sort === "rarity");
 }
-function showWarnings(ws) { $("#warnings").innerHTML = ws.map((w) => `<p>${esc(w)}</p>`).join(""); }
+function showWarnings(ws) { $("#warnings").innerHTML = ws.map((w) => `<p>${esc(fmtMsg(w))}</p>`).join(""); }
 function renderEmpty(res) {
   const el = $("#empty");
   if (res.total) { el.hidden = true; return; }
   el.hidden = false;
-  if ((res.warnings || []).some((w) => w.startsWith("Aucune donnée"))) {
-    el.innerHTML = `<p>Aucune affectation chargée pour l’instant.</p><button type="button" class="btn primary" data-import>Charger un export JSON</button>`;
+  if ((res.warnings || []).some((w) => w?.key === "no_data")) {
+    el.innerHTML = `<p>${t("Aucune affectation chargée pour l’instant.")}</p><button type="button" class="btn primary" data-import>${t("Charger un export JSON")}</button>`;
   } else if (S.favorites_only && !res.favorites) {
-    el.innerHTML = `<p>Vous n’avez encore aucun favori. Cliquez sur l’étoile ☆ d’une affectation pour l’ajouter.</p>
-      <button class="btn" type="button" id="emptyFav">Afficher toutes les affectations</button>`;
+    el.innerHTML = `<p>${t("Vous n’avez encore aucun favori. Cliquez sur l’étoile ☆ d’une affectation pour l’ajouter.")}</p>
+      <button class="btn" type="button" id="emptyFav">${t("Afficher toutes les affectations")}</button>`;
     $("#emptyFav").onclick = () => setFavoritesOnly(false);
   } else {
-    el.innerHTML = `<p>Aucune affectation ne correspond à tous ces filtres.</p><button class="btn" type="button" id="emptyReset">Effacer tous les filtres</button>`;
+    el.innerHTML = `<p>${t("Aucune affectation ne correspond à tous ces filtres.")}</p><button class="btn" type="button" id="emptyReset">${t("Effacer tous les filtres")}</button>`;
     $("#emptyReset").onclick = resetAll;
   }
 }
@@ -231,13 +258,13 @@ function renderEmpty(res) {
 function itemHtml(it) {
   const facts = [];
   if (it.favorite) favs.add(it.id); else favs.delete(it.id);
-  if (it.min_weeks) facts.push(`min. ${it.min_weeks} sem.`);
-  if (it.hours_per_week) facts.push(`${it.hours_per_week} h/sem.`);
-  if (it.housing) facts.push('<span class="yes">Logement</span>');
-  if (it.meals) facts.push('<span class="yes">Repas</span>');
-  if (it.weekend === "J") facts.push("Week-ends");
-  if (it.night === "J") facts.push("Nuits");
-  if (it.first_week) facts.push(`dès le ${fmtDate(it.first_week)}`);
+  if (it.min_weeks) facts.push(t("min. {n} sem.", { n: it.min_weeks }));
+  if (it.hours_per_week) facts.push(t("{n} h/sem.", { n: it.hours_per_week }));
+  if (it.housing) facts.push(`<span class="yes">${t("Logement")}</span>`);
+  if (it.meals) facts.push(`<span class="yes">${t("Repas")}</span>`);
+  if (it.weekend === "J") facts.push(t("Week-ends"));
+  if (it.night === "J") facts.push(t("Nuits"));
+  if (it.first_week) facts.push(t("dès le {date}", { date: fmtDate(it.first_week) }));
   if (it.canton) facts.push(it.canton.replace(/,/g, ", "));
   const dist = it.distance_km != null ? `<span class="dist">${it.distance_km} km</span>` : "";
   const snip = it.snippet ? `<p class="snip">${sanitizeSnippet(it.snippet)}</p>` : "";
@@ -245,42 +272,45 @@ function itemHtml(it) {
   const showRare = (S.sort === "rarity" || S.traits.length) && it.rare?.length;
   const rare = showRare ? `<div class="rare">${rareChips(it.rare, 4)}</div>` : "";
   return `<li class="item" data-id="${it.id}" tabindex="0">${favBtn(it.id)}${dist}
-    <h4${it.title_orig ? ` title="Original : ${esc(it.title_orig)}"` : ""}>${esc(it.title)}</h4>${sec}
+    <h4${it.title_orig ? ` title="${esc(t("Original : {title}", { title: it.title_orig }))}"` : ""}>${esc(it.title)}</h4>${sec}
     <div class="who">${esc(it.employer)} · ${esc(it.place || "")}</div>
     <div class="facts">${facts.map((f) => `<span>${f}</span>`).join("")}</div>
-    <div class="facts">${(it.task_areas || []).map(esc).join(", ")}</div>${rare}${snip}</li>`;
+    <div class="facts">${(it.task_areas || []).map((x) => esc(dataLabel(x))).join(", ")}</div>${rare}${snip}</li>`;
 }
 /* "Durée minimale : 1 semaine · 0,3 %" — the rarest traits first, as given by the server */
 /* Each chip is a button: a click shows every assignment sharing that rare value. */
-const pct = (s) => (s < 0.001 ? "< 0,1 %" : `${(s * 100).toLocaleString("fr-CH", { maximumFractionDigits: s < 0.01 ? 1 : 0 })} %`);
-const traitIndex = (field, value) => S.traits.findIndex((t) => t.field === field && t.value === String(value));
+const pct = (s) => (s < 0.001 ? `< ${(0.1).toLocaleString(LOCALE[LANG])} %`
+  : `${(s * 100).toLocaleString(LOCALE[LANG], { maximumFractionDigits: s < 0.01 ? 1 : 0 })} %`);
+const traitIndex = (field, value) => S.traits.findIndex((x) => x.field === field && x.value === String(value));
 function rareChips(rare, max = Infinity) {
   // the traits already selected come first, so they are never hidden behind "+N"
   const sorted = [...rare].sort((a, b) => (traitIndex(b.field, b.value) >= 0) - (traitIndex(a.field, a.value) >= 0));
   const chips = sorted.slice(0, max).map((r) => {
     const on = traitIndex(r.field, r.value) >= 0;
-    const tip = `${plural(r.count, "affectation", "affectations")} sur l’ensemble (${pct(r.share)}) ont cette caractéristique — ` +
-      (on ? "cliquer pour retirer ce filtre" : "cliquer pour les afficher");
+    const tip = t("{count} sur l’ensemble ({pct}) ont cette caractéristique", { count: tn(r.count, "{n} affectation", "{n} affectations"), pct: pct(r.share) }) +
+      " — " + (on ? t("cliquer pour retirer ce filtre") : t("cliquer pour les afficher"));
     return `<button type="button" class="rare-chip${on ? " on" : ""}" aria-pressed="${on}" title="${esc(tip)}"
       data-trait-field="${esc(r.field)}" data-trait-value="${esc(r.value)}" data-trait-label="${esc(r.label)}" data-trait-share="${r.share}">
-      ✨ ${esc(r.label)} : <b>${esc(r.value)}</b> <small>${pct(r.share)}</small></button>`;
+      ✨ ${esc(traitLabel(r.field, r.label))}${COLON()}<b>${esc(traitValue(r.field, r.value))}</b> <small>${pct(r.share)}</small></button>`;
   });
   const more = rare.length > max ? `<span class="rare-more">+${rare.length - max}</span>` : "";
   return chips.join("") + more;
 }
-function toggleTrait(t) {
-  const i = traitIndex(t.field, t.value);
-  if (i >= 0) S.traits.splice(i, 1); else S.traits.push(t);
+function toggleTrait(x) {
+  const i = traitIndex(x.field, x.value);
+  if (i >= 0) S.traits.splice(i, 1); else S.traits.push(x);
   runSearchNow();
 }
 /* The selected rare traits, on top of the list; × removes one. */
 function renderTraitBar() {
   const bar = $("#traitBar");
   bar.hidden = !S.traits.length;
-  bar.innerHTML = S.traits.map((t, i) => `<span class="rare-chip on">✨ ${esc(t.label)} : <b>${esc(t.value)}</b>${
-    t.share != null ? ` <small>${pct(t.share)}</small>` : ""}<button type="button" class="x" data-untrait="${i}"
-      aria-label="Retirer ${esc(t.label)} : ${esc(t.value)}" title="Retirer ce filtre">×</button></span>`).join("") +
-    (S.traits.length > 1 ? '<button type="button" class="link" data-untrait="all">Tout retirer</button>' : "");
+  bar.innerHTML = S.traits.map((x, i) => {
+    const label = traitLabel(x.field, x.label), value = traitValue(x.field, x.value);
+    return `<span class="rare-chip on">✨ ${esc(label)}${COLON()}<b>${esc(value)}</b>${
+      x.share != null ? ` <small>${pct(x.share)}</small>` : ""}<button type="button" class="x" data-untrait="${i}"
+      aria-label="${esc(t("Retirer {what}", { what: `${label}${COLON()}${value}` }))}" title="${esc(t("Retirer ce filtre"))}">×</button></span>`;
+  }).join("") + (S.traits.length > 1 ? `<button type="button" class="link" data-untrait="all">${t("Tout retirer")}</button>` : "");
 }
 $("#traitBar").addEventListener("click", (e) => {
   const b = e.target.closest("[data-untrait]"); if (!b) return;
@@ -306,16 +336,16 @@ function fmtDate(iso) { const [y, m, d] = iso.split("-"); return `${d}.${m}.${y}
 function renderFacets(f) {
   for (const el of $$(".tri")) renderTri(el, f[el.dataset.field] || []);
   for (const el of $$(".multi")) renderMulti(el, f[el.dataset.field] || []);
-  renderChecks("task_areas", f.task_areas || [], (v) => v);
+  renderChecks("task_areas", f.task_areas || [], dataLabel);
   renderChecks("canton", f.canton || [], (v) => v);
-  renderChecks("language", f.language || [], (v) => LANG[v] || v, "Langue");
-  renderChecks("sector", f.sector || [], (v) => v, "Domaine d’activité");
-  renderChecks("work_model", f.work_model || [], (v) => v, "Modèle d’horaire");
+  renderChecks("language", f.language || [], (v) => (LANG_NAMES[v] ? t(LANG_NAMES[v]) : v), t("Langue"));
+  renderChecks("sector", f.sector || [], (v) => dataLabel(v), t("Domaine d’activité"));
+  renderChecks("work_model", f.work_model || [], dataLabel, t("Modèle d’horaire"));
 }
 function renderTri(el, counts) {
   const c = Object.fromEntries(counts.map(([k, n]) => [String(k), n]));
   const field = el.dataset.field, cur = S[field];
-  const opts = [["any", "Tous", (c[1] || 0) + (c[0] || 0)], [1, "Oui", c[1] || 0], [0, "Non", c[0] || 0]];
+  const opts = [["any", t("Tous"), (c[1] || 0) + (c[0] || 0)], [1, t("Oui"), c[1] || 0], [0, t("Non"), c[0] || 0]];
   let box = el.querySelector(".opts");
   if (!box) { box = document.createElement("div"); box.className = "opts"; el.append(box); }
   box.innerHTML = opts.map(([v, l, n]) => `<button type="button" data-v="${v}" aria-pressed="${String(cur === null ? v === "any" : cur === v)}">${l} <small>${n}</small></button>`).join("");
@@ -324,7 +354,7 @@ function renderMulti(el, counts) {
   const c = Object.fromEntries(counts);
   const field = el.dataset.field;
   el.querySelector(".opts").innerHTML = ["J", "M", "N"].map((v) =>
-    `<button type="button" data-v="${v}" aria-pressed="${S[field].includes(v)}">${JNM[v]} <small>${c[v] || 0}</small></button>`).join("");
+    `<button type="button" data-v="${v}" aria-pressed="${S[field].includes(v)}">${JNM(v)} <small>${c[v] || 0}</small></button>`).join("");
 }
 function renderChecks(field, counts, label, title) {
   const el = $(`.facet[data-field="${field}"]`);
@@ -358,8 +388,8 @@ function addCenter(c) {
 }
 function renderCenters() {
   $("#centers").innerHTML = S.centers.map((c, i) => `<li><span>${esc(c.label)}</span>
-    <input type="number" min="1" max="300" value="${c.radius_km}" data-i="${i}" aria-label="Rayon en km pour ${esc(c.label)}"> km
-    <button type="button" data-del="${i}" aria-label="Retirer ${esc(c.label)}">×</button></li>`).join("");
+    <input type="number" min="1" max="300" value="${c.radius_km}" data-i="${i}" aria-label="${esc(t("Rayon en km pour {place}", { place: c.label }))}"> km
+    <button type="button" data-del="${i}" aria-label="${esc(t("Retirer {what}", { what: c.label }))}">×</button></li>`).join("");
 }
 $("#centers").addEventListener("click", (e) => {
   const i = e.target.dataset.del; if (i === undefined) return;
@@ -379,7 +409,7 @@ const suggest = debounce(async (text) => {
   try { sugItems = (await (await api(`/api/geocode?q=${encodeURIComponent(text)}`)).json()).results; } catch { sugItems = []; }
   sugIdx = -1;
   const ul = $("#placeSug");
-  ul.innerHTML = sugItems.length ? sugItems.map((s, i) => `<li role="option" data-i="${i}">${esc(s.label)}</li>`).join("") : "<li>Aucun lieu trouvé</li>";
+  ul.innerHTML = sugItems.length ? sugItems.map((s, i) => `<li role="option" data-i="${i}">${esc(s.label)}</li>`).join("") : `<li>${t("Aucun lieu trouvé")}</li>`;
   ul.hidden = false;
 }, 250);
 $("#placeQ").addEventListener("input", (e) => suggest(e.target.value));
@@ -434,13 +464,13 @@ function fillAdvanced() {
   const toks = S.text.match(/-?"[^"]*"?|\S+/g) || [];
   const f = { all: [], phrase: "", any: [], none: [] };
   for (let i = 0; i < toks.length; i++) {
-    const t = toks[i];
-    if (t === "OR") continue;
+    const tok = toks[i];
+    if (tok === "OR") continue;
     const orNext = toks[i + 1] === "OR", orPrev = toks[i - 1] === "OR";
-    if (t.startsWith("-") && t.length > 1) f.none.push(t.slice(1).replace(/"/g, ""));
-    else if (orNext || orPrev) f.any.push(t);
-    else if (t.startsWith('"') && !f.phrase) f.phrase = t.replace(/"/g, "");
-    else f.all.push(t);
+    if (tok.startsWith("-") && tok.length > 1) f.none.push(tok.slice(1).replace(/"/g, ""));
+    else if (orNext || orPrev) f.any.push(tok);
+    else if (tok.startsWith('"') && !f.phrase) f.phrase = tok.replace(/"/g, "");
+    else f.all.push(tok);
   }
   advField("all").value = f.all.join(" ");
   advField("phrase").value = f.phrase;
@@ -470,9 +500,11 @@ $("#adv").addEventListener("input", (e) => {
 });
 document.addEventListener("mousedown", (e) => {
   if (!$("#adv").hidden && !e.target.closest("#qWrap")) setAdvanced(false);
+  if (!$("#langList").hidden && !e.target.closest("#langMenu")) setLangMenu(false);
 });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !$("#adv").hidden) { setAdvanced(false); $("#q").focus(); }
+  if (e.key === "Escape" && !$("#langList").hidden) { setLangMenu(false); $("#langBtn").focus(); }
 });
 $("#searchForm").addEventListener("submit", (e) => { e.preventDefault(); runSearchNow(); });
 $$("input[name=mode]").forEach((r) => r.addEventListener("change", () => { S.text_mode = r.value; runSearch(); }));
@@ -494,7 +526,7 @@ $("#rarityBtn").addEventListener("click", () => {
 $("#more").addEventListener("click", loadMore);
 function resetAll() {
   const keep = { text_mode: S.text_mode, ai_top_k: S.ai_top_k, favorites_only: S.favorites_only,
-    view_lang: S.view_lang, search_original: S.search_original };
+    view_tr: S.view_tr, search_original: S.search_original };
   S = Object.assign(blank(), keep); bindInputs(); runSearchNow();
 }
 $("#resetBtn").addEventListener("click", resetAll);
@@ -502,8 +534,9 @@ $("#resetBtn").addEventListener("click", resetAll);
 /* ------------------------------------------------------------------ favourites */
 function favBtn(id) {
   const on = favs.has(id);
+  const label = on ? t("Retirer des favoris") : t("Ajouter aux favoris");
   return `<button type="button" class="fav${on ? " on" : ""}" data-fav="${id}" aria-pressed="${on}"
-    title="${on ? "Retirer des favoris" : "Ajouter aux favoris"}" aria-label="${on ? "Retirer des favoris" : "Ajouter aux favoris"}">${on ? "★" : "☆"}</button>`;
+    title="${label}" aria-label="${label}">${on ? "★" : "☆"}</button>`;
 }
 function setFavCount(n) { if (n != null) $("#favCount").textContent = nf(n); }
 function setFavoritesOnly(on) {
@@ -538,9 +571,11 @@ list.addEventListener("mouseover", (e) => { const li = e.target.closest(".item")
 list.addEventListener("mouseout", (e) => { const li = e.target.closest(".item"); if (li) highlight(+li.dataset.id, false); });
 
 /* ------------------------------------------------------------------ detail drawer */
+let openId = null;
 async function openDetail(id) {
   let d;
-  try { d = await (await api(`/api/assignment/${id}`)).json(); } catch (e) { alert(e.message); return; }
+  try { d = await (await api(withLang(`/api/assignment/${id}`))).json(); } catch (e) { alert(e.message); return; }
+  openId = id;
   if (d.favorite) favs.add(id); else favs.delete(id);
   const fact = (k, v) => (v === null || v === undefined || v === "" ? "" : `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`);
   const src = d.language || "";
@@ -551,43 +586,43 @@ async function openDetail(id) {
     ? `<section class="d-sec"><h3>${title}</h3><p${field ? ` data-tr data-field="${field}"${lang}` : ""}>${esc(text)}</p></section>` : "");
   const addr = (d.locations || []).map((l) => l.label || [l.plz, l.city].filter(Boolean).join(" ")).filter(Boolean);
   $("#drawerBody").innerHTML = `
-    <p class="d-num">N° ${esc(d.number)}${d.canton ? " · " + esc(d.canton) : ""}${d.sector ? ` · <span class="sec" style="--c:${sectorColor(sectorCode(d.sector))}">${esc(sectorName(d.sector))}</span>` : ""}</p>
+    <p class="d-num">${t("N°")} ${esc(d.number)}${d.canton ? " · " + esc(d.canton) : ""}${d.sector ? ` · <span class="sec" style="--c:${sectorColor(sectorCode(d.sector))}">${esc(sectorName(d.sector))}</span>` : ""}</p>
     <h2 class="d-title" id="dTitle" data-tr data-field="title"${lang}>${esc(d.title)}</h2>
     <p class="d-who">${esc(d.employer)} · ${esc(d.place || "")}</p>
-    <p class="d-actions"><a class="btn primary" href="${esc(d.url)}" target="_blank" rel="noopener">Ouvrir sur ZiviConnect</a>
-       ${d.locations.some((l) => l.lat != null) ? '<button class="btn" type="button" id="zoomTo">Voir sur la carte</button>' : ""}
-       ${src !== "fr" ? `<button class="btn" type="button" id="trBtn" title="Traduire le texte de l’affectation en français avec le traducteur intégré du navigateur"><span aria-hidden="true">文A</span><span class="tr-label"> Traduire</span></button>` : ""}
+    <p class="d-actions"><a class="btn primary" href="${esc(d.url)}" target="_blank" rel="noopener">${t("Ouvrir sur ZiviConnect")}</a>
+       ${d.locations.some((l) => l.lat != null) ? `<button class="btn" type="button" id="zoomTo">${t("Voir sur la carte")}</button>` : ""}
+       ${src !== LANG ? `<button class="btn" type="button" id="trBtn" title="${esc(t("Traduire le texte de l’affectation dans la langue de l’interface avec le traducteur intégré du navigateur"))}"><span aria-hidden="true">文A</span><span class="tr-label"> ${t("Traduire")}</span></button>` : ""}
        ${favBtn(id)}</p>
     <p class="tr-status" id="trStatus" role="status" hidden></p>
     <dl class="d-grid">
-      ${fact("Durée minimale", d.min_weeks ? d.min_weeks + " semaines" : "")}
-      ${fact("Heures par semaine", d.hours_per_week)}
-      ${fact("Modèle d’horaire", d.work_model)}
-      ${fact("Logement", YN[d.housing])}${fact("Repas", YN[d.meals])}
-      ${fact("Travail le week-end", JNM[d.weekend])}${fact("Travail de nuit", JNM[d.night])}
-      ${fact("Contrôle de réputation", YN[d.reputation_check])}
-      ${fact("Programme prioritaire", YN[d.priority_program])}
-      ${fact("À l’étranger", d.abroad ? "Oui" : "")}
+      ${fact(t("Durée minimale"), d.min_weeks ? tn(d.min_weeks, "{n} semaine", "{n} semaines") : "")}
+      ${fact(t("Heures par semaine"), d.hours_per_week)}
+      ${fact(t("Modèle d’horaire"), d.work_model ? dataLabel(d.work_model) : "")}
+      ${fact(t("Logement"), YN(d.housing))}${fact(t("Repas"), YN(d.meals))}
+      ${fact(t("Travail le week-end"), JNM(d.weekend))}${fact(t("Travail de nuit"), JNM(d.night))}
+      ${fact(t("Contrôle de réputation"), YN(d.reputation_check))}
+      ${fact(t("Programme prioritaire"), YN(d.priority_program))}
+      ${fact(t("À l’étranger"), d.abroad ? t("Oui") : "")}
     </dl>
-    <p>${(d.task_areas || []).map(esc).join(", ")}</p>
-    ${d.rare?.length ? `<section class="d-sec"><h3>Ce qui la rend rare</h3><div class="rare">${rareChips(d.rare)}</div></section>` : ""}
-    ${sec("Tâches", d.tasks, "tasks")}
-    ${sec("Compétences requises", d.required_skills, "required_skills")}
-    ${sec("Compétences souhaitées", d.desired_skills, "desired_skills")}
-    ${sec("Cours du service civil", d.courses, "courses")}
-    <section class="d-sec"><h3>Semaines de début disponibles</h3>${calendar(d.weeks || [])}</section>
-    ${sec("À propos de l’établissement", d.employer_description, "employer_description")}
-    ${sec("Adresse de l’affectation", addr.join("\n"))}
-    <section class="d-sec"><h3>Contact</h3><p>${esc([d.contact_name, d.contact_role].filter(Boolean).join(", "))}
+    <p>${(d.task_areas || []).map((x) => esc(dataLabel(x))).join(", ")}</p>
+    ${d.rare?.length ? `<section class="d-sec"><h3>${t("Ce qui la rend rare")}</h3><div class="rare">${rareChips(d.rare)}</div></section>` : ""}
+    ${sec(t("Tâches"), d.tasks, "tasks")}
+    ${sec(t("Compétences requises"), d.required_skills, "required_skills")}
+    ${sec(t("Compétences souhaitées"), d.desired_skills, "desired_skills")}
+    ${sec(t("Cours du service civil"), d.courses, "courses")}
+    <section class="d-sec"><h3>${t("Semaines de début disponibles")}</h3>${calendar(d.weeks || [])}</section>
+    ${sec(t("À propos de l’établissement"), d.employer_description, "employer_description")}
+    ${sec(t("Adresse de l’affectation"), addr.join("\n"))}
+    <section class="d-sec"><h3>${t("Contact")}</h3><p>${esc([d.contact_name, d.contact_role].filter(Boolean).join(", "))}
 ${d.contact_phone ? `<a href="tel:${esc(d.contact_phone.replace(/\s/g, ""))}">${esc(d.contact_phone)}</a>` : ""}
 ${d.contact_email ? `<a href="mailto:${esc(d.contact_email)}">${esc(d.contact_email)}</a>` : ""}</p></section>
-    ${sec("Comment postuler", d.how_to_apply, "how_to_apply")}`;
+    ${sec(t("Comment postuler"), d.how_to_apply, "how_to_apply")}`;
   const tb = $("#trBtn");
   detailTr = d.tr || {};
   if (tb) {
     tb.onclick = () => toggleTranslation(src);
-    // "Afficher en français" is on and the database has this entry translated: open in French
-    if (S.view_lang === "fr" && Object.keys(detailTr).length) applyStored(src, "Traduction enregistrée dans la base.");
+    // "show translated" is on and the database has this entry translated: open it so
+    if (S.view_tr && Object.keys(detailTr).length) applyStored(src, t("Traduction enregistrée dans la base."));
   }
   const z = $("#zoomTo");
   if (z) z.onclick = () => {
@@ -600,28 +635,29 @@ ${d.contact_email ? `<a href="mailto:${esc(d.contact_email)}">${esc(d.contact_em
 }
 /* ------------------------------------------------------------------ translation
    Uses the browser's built-in, on-device Translator API (Chrome / Edge 138+): nothing is
-   sent to a server. Without it, the user is pointed to the browser's own page translation. */
+   sent to a server. The target is the interface language. Without the API, the user is
+   pointed to the browser's own page translation. */
 const translators = new Map(); // "de>fr" -> Translator
 async function getTranslator(source, status = () => {}) {
-  const key = `${source}>fr`;
+  const key = `${source}>${LANG}`;
   if (translators.has(key)) return translators.get(key);
-  const opts = { sourceLanguage: source, targetLanguage: "fr" };
-  status("Préparation du traducteur du navigateur…");
+  const opts = { sourceLanguage: source, targetLanguage: LANG };
+  status(t("Préparation du traducteur du navigateur…"));
   // some browsers expose the API but never answer (embedded Chromium): don't hang forever
   const avail = await Promise.race([Translator.availability(opts),
     new Promise((resolve) => setTimeout(() => resolve("timeout"), 8000))]);
-  if (avail === "timeout") throw new Error("le traducteur intégré du navigateur ne répond pas");
+  if (avail === "timeout") throw new Error(t("le traducteur intégré du navigateur ne répond pas"));
   if (avail === "unavailable") return null;
-  if (avail !== "available") status("Téléchargement du modèle de traduction…");
-  const t = await Translator.create({
+  if (avail !== "available") status(t("Téléchargement du modèle de traduction…"));
+  const tr = await Translator.create({
     ...opts,
     monitor(m) {
       m.addEventListener("downloadprogress", (e) =>
-        status(`Téléchargement du modèle de traduction : ${Math.round(e.loaded * 100)} %`));
+        status(t("Téléchargement du modèle de traduction : {pct} %", { pct: Math.round(e.loaded * 100) })));
     },
   });
-  translators.set(key, t);
-  return t;
+  translators.set(key, tr);
+  return tr;
 }
 /* The browser's translator fails now and then ("Other generic failures occurred"): on long
    inputs, and sometimes after a while for no visible reason. So texts go in sentence slices,
@@ -649,15 +685,15 @@ async function translateSlice(lang, text, status, depth = 0) {
   let lastErr;
   for (let attempt = 0; attempt < 3; attempt++) {
     // only the first creation may show "Préparation…"/download progress; quiet recreations
-    const t = await getTranslator(lang, attempt === 0 && depth === 0 ? status : undefined);
-    if (!t) throw new Error(`le navigateur ne sait pas traduire ${LANG_NAME[lang] || lang}`);
+    const tr = await getTranslator(lang, attempt === 0 && depth === 0 ? status : undefined);
+    if (!tr) throw new Error(t("le navigateur ne sait pas traduire depuis {lang}", { lang: langName(lang) }));
     try {
-      return await t.translate(text);
+      return await tr.translate(text);
     } catch (e) {
       lastErr = e;
       if (attempt >= 1) { // failed twice: drop this translator, the next attempt gets a fresh one
-        try { t.destroy?.(); } catch { /* already gone */ }
-        translators.delete(`${lang}>fr`);
+        try { tr.destroy?.(); } catch { /* already gone */ }
+        translators.delete(`${lang}>${LANG}`);
       }
       if (attempt < 2) await sleep(150 * (attempt + 1));
     }
@@ -690,112 +726,115 @@ async function detectLanguage(text) {
     return (await det.detect(text))[0]?.detectedLanguage || "de";
   } catch { return "de"; }
 }
-const LANG_NAME = { de: "l’allemand", it: "l’italien", en: "l’anglais", fr: "le français" };
+/* "allemand" / "Deutsch" / "tedesco": a language name in the interface language */
+const langName = (code) => t({ de: "allemand", fr: "français", it: "italien", en: "anglais" }[code] || code);
 let trRun = 0;
 let detailTr = {}; // stored translations of the open entry, by field
 /* Put the stored translations in place; returns the elements still in the original language. */
-function applyStored(source, msg) {
+function applyStored(source, message) {
   const rest = [];
   for (const el of $$("#drawerBody [data-tr]")) {
-    const t = detailTr[el.dataset.field];
-    if (!t) { rest.push(el); continue; }
+    const tx = detailTr[el.dataset.field];
+    if (!tx) { rest.push(el); continue; }
     el.dataset.orig ??= el.textContent;
-    el.textContent = t; el.lang = "fr";
+    el.textContent = tx; el.lang = LANG;
   }
   if (rest.length < $$("#drawerBody [data-tr]").length) {
     const btn = $("#trBtn");
-    btn.dataset.state = "done"; btn.querySelector(".tr-label").textContent = " Voir l’original";
-    const out = $("#trStatus"); out.hidden = !msg; out.textContent = msg || ""; out.classList.remove("err");
+    btn.dataset.state = "done"; btn.querySelector(".tr-label").textContent = ` ${t("Voir l’original")}`;
+    const out = $("#trStatus"); out.hidden = !message; out.textContent = message || ""; out.classList.remove("err");
   }
   return rest;
 }
 async function toggleTranslation(source) {
   const btn = $("#trBtn"), out = $("#trStatus"), label = btn.querySelector(".tr-label");
   const els = $$("#drawerBody [data-tr]");
-  const status = (msg, err = false) => { out.hidden = !msg; out.textContent = msg || ""; out.classList.toggle("err", err); };
+  const status = (message, err = false) => { out.hidden = !message; out.textContent = message || ""; out.classList.toggle("err", err); };
   if (btn.dataset.state === "done") { // back to the original text
     for (const el of els) if (el.dataset.orig != null) { el.textContent = el.dataset.orig; if (source) el.lang = source; }
-    btn.dataset.state = ""; label.textContent = " Traduire"; status("");
+    btn.dataset.state = ""; label.textContent = ` ${t("Traduire")}`; status("");
     return;
   }
   // translations already in the database first; the browser only does the rest
   const stored = Object.keys(detailTr).length;
-  const rest = applyStored(source, "Traduction enregistrée dans la base.");
+  const rest = applyStored(source, t("Traduction enregistrée dans la base."));
   if (!rest.length) return;
   if (!("Translator" in self)) {
     if (stored) return; // partly translated from the database: good enough
-    status("Ce navigateur n’a pas de traducteur intégré utilisable par la page. Utilisez un Chrome ou Edge récent, " +
-      "ou faites un clic droit sur le texte → « Traduire en français ».", true);
+    status(t("Ce navigateur n’a pas de traducteur intégré utilisable par la page. Utilisez un Chrome ou Edge récent, ou faites un clic droit sur le texte → « Traduire ».") , true);
     return;
   }
   const run = ++trRun;
   btn.disabled = true;
   try {
     const src = source || await detectLanguage(els.map((e) => e.textContent).join("\n").slice(0, 2000));
-    if (src === "fr") { status("Ce texte est déjà en français."); return; }
-    const t = await getTranslator(src, status);
-    if (!t) { status(`Le navigateur ne sait pas traduire ${LANG_NAME[src] || src} vers le français.`, true); return; }
-    status("Traduction en cours…");
+    if (src === LANG) { status(t("Ce texte est déjà dans la langue de l’interface.")); return; }
+    const tr = await getTranslator(src, status);
+    if (!tr) { status(t("Le navigateur ne sait pas traduire depuis {lang}.", { lang: langName(src) }), true); return; }
+    status(t("Traduction en cours…"));
     for (const el of rest) {
       if (run !== trRun || !$("#drawerBody").contains(el)) return; // panel closed or another entry opened
       const orig = el.dataset.orig ?? el.textContent;
-      const fr = await translateText(src, orig, status);
+      const done = await translateText(src, orig, status);
       el.dataset.orig = orig;
-      el.textContent = fr;
-      el.lang = "fr";
+      el.textContent = done;
+      el.lang = LANG;
     }
-    btn.dataset.state = "done"; label.textContent = " Voir l’original";
-    status(`Traduit depuis ${LANG_NAME[src] || src} par le traducteur intégré du navigateur.`);
+    btn.dataset.state = "done"; label.textContent = ` ${t("Voir l’original")}`;
+    status(t("Traduit depuis {lang} par le traducteur intégré du navigateur.", { lang: langName(src) }));
   } catch (e) {
-    status(`La traduction a échoué : ${e.message}. Faites un clic droit sur le texte → « Traduire en français », ` +
-      "ou utilisez un Chrome ou Edge récent.", true);
+    status(t("La traduction a échoué : {error}. Faites un clic droit sur le texte → « Traduire », ou utilisez un Chrome ou Edge récent.", { error: e.message }), true);
   } finally {
     if (run === trRun) btn.disabled = false;
   }
 }
 
 function calendar(weeks) {
-  if (!weeks.length) return "<p>Aucune date publiée.</p>";
+  if (!weeks.length) return `<p>${t("Aucune date publiée.")}</p>`;
   const { from, to } = S.period;
   const months = {};
   for (const w of weeks) (months[w.slice(0, 7)] ||= []).push(w);
-  const name = (ym) => new Date(ym + "-15").toLocaleDateString("fr-CH", { month: "long", year: "numeric" });
+  const name = (ym) => new Date(ym + "-15").toLocaleDateString(LOCALE[LANG], { month: "long", year: "numeric" });
   return `<div class="cal">${Object.entries(months).map(([ym, ws]) => `<div class="m"><b>${name(ym)}</b>${ws.map((w) =>
     `<span class="${(from && w >= from && (!to || w <= to)) || (!from && to && w <= to) ? "in" : ""}">${w.slice(8)}.${w.slice(5, 7)}</span>`).join("")}</div>`).join("")}</div>`;
 }
-function closeDrawer() { $("#drawer").hidden = true; }
+function closeDrawer() { $("#drawer").hidden = true; openId = null; }
 $("#drawerClose").addEventListener("click", closeDrawer);
 $("#drawer").addEventListener("click", (e) => { if (e.target.id === "drawer") closeDrawer(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#drawer").hidden) closeDrawer(); });
 
 /* ------------------------------------------------------------------ import */
+const mb = (bytes) => (bytes / 1048576).toLocaleString(LOCALE[LANG], { maximumFractionDigits: 1 });
 $("#fileInput").addEventListener("change", async (e) => {
   const file = e.target.files[0]; e.target.value = "";
   if (!file) return;
   const dlg = $("#importDlg");
-  $("#impMsg").textContent = `Envoi de ${file.name} (${(file.size / 1048576).toFixed(1).replace(".", ",")} Mo)…`;
+  $("#impMsg").textContent = t("Envoi de {file} ({size} Mo)…", { file: file.name, size: mb(file.size) });
   $("#impBar").style.width = "2%"; $("#impReport").hidden = true; $("#impClose").disabled = true;
   dlg.showModal();
   const fd = new FormData(); fd.append("file", file);
   try {
     const r = await fetch("/api/import", { method: "POST", body: fd });
-    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
-  } catch (err) { $("#impMsg").textContent = `Échec de l’envoi : ${err.message}`; $("#impClose").disabled = false; return; }
+    if (!r.ok) throw new Error(fmtMsg((await r.json()).detail) || r.statusText);
+  } catch (err) { $("#impMsg").textContent = t("Échec de l’envoi : {error}", { error: err.message }); $("#impClose").disabled = false; return; }
   const poll = async () => {
     const st = await (await api("/api/import/status")).json();
-    $("#impMsg").textContent = st.error ? `Échec de l’import : ${st.error}` : st.message;
+    $("#impMsg").textContent = st.error ? t("Échec de l’import : {error}", { error: fmtMsg(st.error) }) : fmtMsg(st.message);
     $("#impBar").style.width = `${Math.round((st.progress || 0) * 100)}%`;
     if (st.running) { setTimeout(poll, 700); return; }
     $("#impClose").disabled = false;
     if (!st.error) $("#impBar").style.width = "100%";
     if (st.report) {
       const r = st.report;
-      $("#impMsg").textContent = `${nf(r.assignments)} affectations chargées — ${nf(r.with_location)} placées sur la carte, ${nf(r.with_weeks)} avec des dates de début.`;
+      $("#impMsg").textContent = t("{n} affectations chargées — {located} placées sur la carte, {weeks} avec des dates de début.",
+        { n: nf(r.assignments), located: nf(r.with_location), weeks: nf(r.with_weeks) });
       const extra = { unknown_fields: r.unknown_detail_fields, missing_fields: r.fields_missing_in_some_records };
       if (Object.keys(r.unknown_detail_fields || {}).length || Object.keys(r.fields_missing_in_some_records || {}).length) {
         $("#impReport").textContent = JSON.stringify(extra, null, 2); $("#impReport").hidden = false;
       }
-      fitted = false; runSearchNow();
+      fitted = false;
+      await loadLabels();
+      runSearchNow();
       if ($("#dbDlg").open) loadDbInfo();
     }
   };
@@ -805,17 +844,22 @@ $("#fileInput").addEventListener("change", async (e) => {
 /* ------------------------------------------------------------------ "Base de données" window
    One floating window, three sections chosen in the left column. */
 const SEC_TITLES = { db: "Base de données", tr: "Traduction", ai: "Recherche IA" };
+let panelSec = store.get("zivi.panelSec", "db");
 function showSection(sec) {
+  panelSec = sec;
   $$("#dbDlg .panel-nav [data-sec]").forEach((b) => b.toggleAttribute("aria-current", b.dataset.sec === sec));
   $$("#dbDlg .panel-sec").forEach((el) => { el.hidden = el.dataset.sec !== sec; });
-  $("#pTitle").textContent = SEC_TITLES[sec];
+  $("#pTitle").textContent = t(SEC_TITLES[sec]);
   store.set("zivi.panelSec", sec);
   ({ db: loadDbInfo, tr: () => { refreshTrStats(); showTrEngine(); }, ai: loadAI })[sec]();
 }
 function openPanel(sec) {
   const dlg = $("#dbDlg");
-  if (!dlg.open) dlg.showModal();
-  showSection(sec || store.get("zivi.panelSec", "db"));
+  const opening = !dlg.open;
+  if (opening) dlg.showModal();
+  showSection(sec || panelSec);
+  // the dialog focuses its first button by default (Base de données): use the open section
+  if (opening) $("#dbDlg .panel-nav [aria-current]")?.focus();
 }
 $("#dbBtn").addEventListener("click", () => openPanel());
 $("#dbClose").addEventListener("click", () => $("#dbDlg").close());
@@ -824,36 +868,39 @@ $$("#dbDlg .panel-nav [data-sec]").forEach((b) => b.addEventListener("click", ()
 document.addEventListener("click", (e) => { if (e.target.closest("[data-import]")) $("#fileInput").click(); });
 
 /* ---- database */
-const fmtSize = (b) => (b > 1048576 ? `${(b / 1048576).toFixed(1).replace(".", ",")} Mo` : `${Math.round(b / 1024)} Ko`);
-const fmtWhen = (t) => new Date(t * 1000).toLocaleString("fr-CH", { dateStyle: "long", timeStyle: "short" });
+const fmtSize = (b) => (b > 1048576 ? t("{n} Mo", { n: mb(b) }) : t("{n} Ko", { n: Math.round(b / 1024) }));
+const fmtWhen = (s) => new Date(s * 1000).toLocaleString(LOCALE[LANG], { dateStyle: "long", timeStyle: "short" });
 async function loadDbInfo() {
   let st;
   try { st = await (await api("/api/stats")).json(); } catch (e) { $("#dbInfo").textContent = e.message; return; }
   const card = (n, label, sub = "") => `<div class="stat"><b>${n}</b><span>${label}</span>${sub ? `<small>${sub}</small>` : ""}</div>`;
   const ai = st.ai_index || {};
+  const byLang = st.translations_by_lang || {};
+  const trSub = Object.entries(byLang).map(([l, n]) => `${l.toUpperCase()} ${nf(n)}`).join(" · ");
   $("#dbCards").innerHTML = [
-    card(nf(st.assignments), "affectations"),
-    card(nf(st.located), "sur la carte", st.assignments ? `${Math.round((100 * st.located) / st.assignments)} %` : ""),
-    card(nf(st.favorites), "favoris"),
-    card(nf(st.translations), "textes traduits"),
-    card(ai.ready ? nf(ai.vectors) : "—", "index IA", ai.ready ? esc(ai.model || "") : "pas construit"),
+    card(nf(st.assignments), t("affectations")),
+    card(nf(st.located), t("sur la carte"), st.assignments ? `${Math.round((100 * st.located) / st.assignments)} %` : ""),
+    card(nf(st.favorites), t("favoris")),
+    card(nf(st.translations), t("textes traduits"), trSub),
+    card(ai.ready ? nf(ai.vectors) : "—", t("index IA"), ai.ready ? esc(ai.model || "") : t("pas construit")),
   ].join("");
   const r = st.report || {};
   const row = (k, v) => (v ? `<div><dt>${k}</dt><dd>${v}</dd></div>` : "");
   $("#dbInfo").innerHTML = [
-    row("Fichier importé", esc(r.source_file || "")),
-    row("Importé le", st.imported_at ? fmtWhen(st.imported_at) : ""),
-    row("Semaines de début", st.first_week ? `du ${fmtDate(st.first_week)} au ${fmtDate(st.last_week)}` : ""),
-    row("Fichier de la base", `<code>${esc(st.db_path)}</code> <button type="button" class="link" id="copyPath">Copier</button>`),
-    row("Taille", st.db_size ? fmtSize(st.db_size) : ""),
+    row(t("Fichier importé"), esc(r.source_file || "")),
+    row(t("Importé le"), st.imported_at ? fmtWhen(st.imported_at) : ""),
+    row(t("Semaines de début"), st.first_week ? t("du {from} au {to}", { from: fmtDate(st.first_week), to: fmtDate(st.last_week) }) : ""),
+    row(t("Fichier de la base"), `<code>${esc(st.db_path)}</code> <button type="button" class="link" id="copyPath">${t("Copier")}</button>`),
+    row(t("Taille"), st.db_size ? fmtSize(st.db_size) : ""),
   ].join("");
   const cp = $("#copyPath");
-  if (cp) cp.onclick = async () => { try { await navigator.clipboard.writeText(st.db_path); cp.textContent = "Copié"; } catch { cp.textContent = "Copie impossible"; } };
-  $("#dzFav").textContent = plural(st.favorites, "favori", "favoris");
-  $("#dzTr").textContent = plural(st.translations, "texte traduit", "textes traduits");
-  $("#dzAi").textContent = ai.ready ? `${nf(ai.vectors)} vecteurs (${ai.model})` : "aucun";
+  if (cp) cp.onclick = async () => { try { await navigator.clipboard.writeText(st.db_path); cp.textContent = t("Copié"); } catch { cp.textContent = t("Copie impossible"); } };
+  const trHere = byLang[LANG] || 0;
+  $("#dzFav").textContent = tn(st.favorites, "{n} favori", "{n} favoris");
+  $("#dzTr").textContent = `${tn(trHere, "{n} texte traduit", "{n} textes traduits")} (${langName(LANG)})`;
+  $("#dzAi").textContent = ai.ready ? t("{n} vecteurs ({model})", { n: nf(ai.vectors), model: ai.model }) : t("aucun");
   $("#dzFavBtn").disabled = !st.favorites;
-  $("#dzTrBtn").disabled = !st.translations || TR.running;
+  $("#dzTrBtn").disabled = !trHere || TR.running;
   $("#dzAiBtn").disabled = !ai.ready || ai.running;
 }
 async function danger(question, call) {
@@ -861,45 +908,47 @@ async function danger(question, call) {
   try { await call(); } catch (e) { alert(e.message); }
   loadDbInfo(); runSearchNow();
 }
-const del = (path) => fetch(path, { method: "DELETE" }).then(async (r) => { if (!r.ok) throw new Error((await r.json()).detail || r.statusText); return r; });
-$("#dzFavBtn").addEventListener("click", () => danger("Effacer tous les favoris ? C’est définitif.", async () => {
+const del = (path) => fetch(path, { method: "DELETE" }).then(async (r) => { if (!r.ok) throw new Error(fmtMsg((await r.json()).detail) || r.statusText); return r; });
+$("#dzFavBtn").addEventListener("click", () => danger(t("Effacer tous les favoris ? C’est définitif."), async () => {
   await del("/api/favorites"); favs.clear();
 }));
-$("#dzTrBtn").addEventListener("click", () => danger("Supprimer toutes les traductions ? Il faudra relancer la traduction.", async () => {
-  await del("/api/translate"); refreshTrStats();
+$("#dzTrBtn").addEventListener("click", () => danger(t("Supprimer les traductions en {lang} ? Les autres langues sont conservées.", { lang: langName(LANG) }), async () => {
+  await del(withLang("/api/translate")); refreshTrStats();
 }));
-$("#dzAiBtn").addEventListener("click", () => danger("Supprimer l’index IA de ce modèle ? Il faudra le reconstruire.", () => del("/api/ai/index")));
+$("#dzAiBtn").addEventListener("click", () => danger(t("Supprimer l’index IA de ce modèle (dans cette langue) ? Il faudra le reconstruire."), () => del("/api/ai/index")));
 
-/* ---- translation of the whole database, in this page, with the browser's translator.
-   The server hands out texts not translated yet (titles first) and stores the answers;
-   pausing or closing the page loses at most the batch in progress. */
+/* ---- translation of the whole database into the interface language.
+   Browser engine: in this page, the server hands out texts not translated yet (titles first)
+   and stores the answers. Ollama engine: the server runs the job, the page follows it. */
 const TR = { running: false, stop: false, startedAt: 0, charsAtStart: 0, stats: null };
 function renderTr() {
   const st = TR.stats;
   if (!st) return;
   const pctDone = st.chars ? (100 * st.chars_done) / st.chars : 0;
-  const pctTxt = st.texts && st.done === st.texts ? "100 %" : `${pctDone.toLocaleString("fr-CH", { maximumFractionDigits: pctDone < 10 ? 1 : 0 })} %`;
-  $("#trPct").textContent = st.texts ? pctTxt : "Rien à traduire";
+  const pctTxt = st.texts && st.done === st.texts ? "100 %" : `${pctDone.toLocaleString(LOCALE[LANG], { maximumFractionDigits: pctDone < 10 ? 1 : 0 })} %`;
+  $("#trPct").textContent = st.texts ? pctTxt : t("Rien à traduire");
   $("#trCount").textContent = st.texts
-    ? `${nf(st.done)} / ${nf(st.texts)} textes · ${nf(st.assignments_done)} / ${nf(st.assignments)} affectations entièrement traduites`
-    : "Toutes les affectations sont déjà en français.";
+    ? t("{done} / {texts} textes · {adone} / {assignments} affectations entièrement traduites",
+      { done: nf(st.done), texts: nf(st.texts), adone: nf(st.assignments_done), assignments: nf(st.assignments) })
+    : t("Toutes les affectations sont déjà en {lang}.", { lang: langName(LANG) });
   $("#trBar").style.width = `${pctDone}%`;
   $("#trStart").hidden = TR.running;
   $("#trPause").hidden = !TR.running;
-  $("#trStart").textContent = st.done && st.done < st.texts ? "Reprendre la traduction" : "Traduire la base";
-  if (st.failed && !TR.running) $("#trCount").textContent += ` · ${plural(st.failed, "texte mis de côté", "textes mis de côté")}`;
+  $("#trStart").textContent = st.done && st.done < st.texts ? t("Reprendre la traduction") : t("Traduire la base en {lang}", { lang: langName(LANG) });
+  if (st.failed && !TR.running) $("#trCount").textContent += ` · ${tn(st.failed, "{n} texte mis de côté", "{n} textes mis de côté")}`;
   $("#trStart").disabled = !st.texts || st.done === st.texts;
   const badge = TR.running ? pctTxt : "";
   for (const id of ["#dbBadge", "#trNavBadge"]) { $(id).hidden = !badge; $(id).textContent = badge; }
 }
 async function refreshTrStats() {
-  try { TR.stats = await (await api("/api/translate")).json(); } catch { return; }
+  try { TR.stats = await (await api(withLang("/api/translate"))).json(); } catch { return; }
   renderTr();
   if (!TR.running && trEngine() === "browser" && !("Translator" in self)) {
-    trJobMsg("Ce navigateur n’a pas de traducteur intégré utilisable par la page : utilisez un Chrome ou Edge récent, ou Ollama.", true);
+    trJobMsg(t("Ce navigateur n’a pas de traducteur intégré utilisable par la page : utilisez un Chrome ou Edge récent, ou Ollama."), true);
   }
 }
-function trJobMsg(msg, err = false) { const el = $("#trJobStatus"); el.textContent = msg || ""; el.classList.toggle("err", err); }
+function trJobMsg(message, err = false) { const el = $("#trJobStatus"); el.textContent = message || ""; el.classList.toggle("err", err); }
+const eta = (secs) => (secs > 5400 ? t("{n} h", { n: Math.round(secs / 3600) }) : t("{n} min", { n: Math.max(1, Math.round(secs / 60)) }));
 async function translateDatabase() {
   if (TR.running) return;
   if (trEngine() === "ollama") return translateWithOllama();
@@ -907,30 +956,31 @@ async function translateDatabase() {
 }
 async function translateInBrowser() {
   if (TR.running) return;
-  if (!("Translator" in self)) { trJobMsg("Ce navigateur n’a pas de traducteur intégré : utilisez un Chrome ou Edge récent.", true); return; }
+  if (!("Translator" in self)) { trJobMsg(t("Ce navigateur n’a pas de traducteur intégré : utilisez un Chrome ou Edge récent."), true); return; }
+  const target = LANG; // stays the same for the whole run, even if the interface changes
   Object.assign(TR, { running: true, stop: false, engine: "browser", startedAt: performance.now(),
     charsAtStart: TR.stats?.chars_done || 0, failed: 0 });
   renderTr();
   try {
     // texts set aside by an earlier run get another chance
-    try { TR.stats = await (await api("/api/translate/retry", {})).json(); } catch { /* keep counts */ }
-    // ask for both models right away, while the click still counts as a user action
+    try { TR.stats = await (await api(`/api/translate/retry?lang=${target}`, {})).json(); } catch { /* keep counts */ }
+    // ask for every model right away, while the click still counts as a user action
     // (the browser only allows downloading a model then)
-    const langs = Object.keys(TR.stats?.by_language || { de: 1 }).filter((l) => l !== "?" && l !== "fr");
+    const langs = Object.keys(TR.stats?.by_language || { de: 1 }).filter((l) => l !== "?" && l !== target);
     for (const l of langs.length ? langs : ["de"]) {
-      const t = await getTranslator(l, trJobMsg);
-      if (!t) trJobMsg(`Le navigateur ne sait pas traduire ${LANG_NAME[l] || l} : ces textes seront gardés tels quels.`, true);
+      const tr = await getTranslator(l, trJobMsg);
+      if (!tr) trJobMsg(t("Le navigateur ne sait pas traduire depuis {lang} : ces textes seront gardés tels quels.", { lang: langName(l) }), true);
     }
     let sinceStats = 0, failedInARow = 0, lastErr = null;
     while (!TR.stop) {
-      const { items } = await (await api("/api/translate/todo?limit=12")).json();
+      const { items } = await (await api(`/api/translate/todo?limit=12&lang=${target}`)).json();
       if (!items.length) break;
       const done = [];
       for (const it of items) {
         if (TR.stop) break;
         const lang = it.lang || await detectLanguage(it.text);
-        const t = lang === "fr" ? null : await getTranslator(lang, trJobMsg);
-        if (!t) { // French already, or a language the browser can't translate: keep as is
+        const tr = lang === target ? null : await getTranslator(lang, trJobMsg);
+        if (!tr) { // already in the target language, or one the browser can't translate: keep as is
           done.push({ hash: it.hash, lang, text: it.text });
         } else {
           try {
@@ -940,40 +990,37 @@ async function translateInBrowser() {
             // set aside (retried on the next run) instead of stopping everything
             done.push({ hash: it.hash, failed: true });
             TR.failed += 1; failedInARow += 1; lastErr = e;
-            if (failedInARow >= 25) throw new Error(`le traducteur échoue sans arrêt (${e.message})`);
+            if (failedInARow >= 25) throw new Error(t("le traducteur échoue sans arrêt ({error})", { error: e.message }));
             continue;
           }
         }
         TR.stats.done += 1; TR.stats.chars_done += it.text.length;
       }
-      if (done.length) await api("/api/translate/save", { items: done });
+      if (done.length) await api("/api/translate/save", { items: done, lang: target });
       const secs = (performance.now() - TR.startedAt) / 1000;
       const rate = (TR.stats.chars_done - TR.charsAtStart) / Math.max(secs, 1);
       const left = rate > 0 ? (TR.stats.chars - TR.stats.chars_done) / rate : 0;
-      trJobMsg(`Traduction en cours… ${Math.round(rate).toLocaleString("fr-CH")} caractères/s · ` +
-        `encore ${left > 5400 ? `${Math.round(left / 3600)} h` : `${Math.max(1, Math.round(left / 60))} min`} environ` +
-        (TR.failed ? ` · ${plural(TR.failed, "texte mis de côté", "textes mis de côté")} (dernière erreur : ${lastErr?.message})` : "") + ".");
+      trJobMsg(t("Traduction en cours… {rate} caractères/s · encore {eta} environ", { rate: nf(Math.round(rate)), eta: eta(left) }) +
+        (TR.failed ? ` · ${tn(TR.failed, "{n} texte mis de côté", "{n} textes mis de côté")} (${t("dernière erreur : {error}", { error: lastErr?.message })})` : "") + ".");
       renderTr();
       if (++sinceStats >= 15) { sinceStats = 0; await refreshTrStats(); } // exact counts now and then
     }
-    const aside = TR.failed
-      ? ` ${plural(TR.failed, "texte n’a", "textes n’ont")} pas pu être traduit${TR.failed > 1 ? "s" : ""} : « Reprendre la traduction » les réessaie.`
-      : "";
-    trJobMsg((TR.stop ? "En pause. « Reprendre la traduction » continue là où elle s’est arrêtée." : "Traduction terminée.") + aside);
+    const aside = TR.failed ? ` ${tn(TR.failed, "{n} texte n’a pas pu être traduit", "{n} textes n’ont pas pu être traduits")} : ${t("« Reprendre la traduction » les réessaie.")}` : "";
+    trJobMsg((TR.stop ? t("En pause. « Reprendre la traduction » continue là où elle s’est arrêtée.") : t("Traduction terminée.")) + aside);
   } catch (e) {
-    trJobMsg(`La traduction s’est arrêtée : ${e.message}. Ce qui est fait est enregistré ; vous pouvez reprendre.`, true);
+    trJobMsg(t("La traduction s’est arrêtée : {error}. Ce qui est fait est enregistré ; vous pouvez reprendre.", { error: e.message }), true);
   } finally {
     TR.running = false;
-    try { TR.stats = await (await api("/api/translate/finish", {})).json(); } catch { /* keep the local counts */ }
+    try { TR.stats = await (await api(`/api/translate/finish?lang=${target}`, {})).json(); } catch { /* keep the local counts */ }
     renderTr();
-    if (S.view_lang === "fr" || S.text) runSearchNow();
+    if (S.view_tr || S.text) runSearchNow();
   }
 }
 $("#trStart").addEventListener("click", translateDatabase);
 $("#trPause").addEventListener("click", async () => {
   TR.stop = true;
   if (TR.engine === "ollama") { try { await api("/api/translate/job/stop", {}); } catch { /* polling shows it */ } }
-  trJobMsg("Mise en pause après le texte en cours…");
+  trJobMsg(t("Mise en pause après le texte en cours…"));
 });
 // only the browser engine needs the page open; the Ollama job runs on the server
 window.addEventListener("beforeunload", (e) => { if (TR.running && TR.engine === "browser") { e.preventDefault(); e.returnValue = ""; } });
@@ -984,10 +1031,8 @@ function showTrEngine() {
   const ol = trEngine() === "ollama";
   $("#trOllama").hidden = !ol;
   $("#trHint").textContent = ol
-    ? "La traduction tourne sur cet ordinateur, dans Ollama : vous pouvez fermer cette fenêtre, et même la page. " +
-      "Ce qui est traduit est enregistré au fur et à mesure ; « Traduire la base » reprend là où elle s’est arrêtée."
-    : "La traduction se fait dans cette page : vous pouvez fermer cette fenêtre et continuer à chercher, mais gardez " +
-      "la page ouverte. Ce qui est traduit est enregistré au fur et à mesure ; « Traduire la base » reprend là où elle s’est arrêtée.";
+    ? t("La traduction tourne sur cet ordinateur, dans Ollama : vous pouvez fermer cette fenêtre, et même la page. Ce qui est traduit est enregistré au fur et à mesure ; « Traduire la base » reprend là où elle s’est arrêtée.")
+    : t("La traduction se fait dans cette page : vous pouvez fermer cette fenêtre et continuer à chercher, mais gardez la page ouverte. Ce qui est traduit est enregistré au fur et à mesure ; « Traduire la base » reprend là où elle s’est arrêtée.");
   if (ol) renderOllamaBox($("#trOllamaBox"), $("#trModel").value, "");
   else trJobMsg("");
 }
@@ -1009,11 +1054,11 @@ async function loadTrSettings() {
 async function translateWithOllama() {
   const model = $("#trModel").value.trim();
   const st = await ollamaStatus("");
-  if (!st?.running) { trJobMsg("Ollama ne répond pas : démarrez-le ou installez-le ci-dessus.", true); return; }
+  if (!st?.running) { trJobMsg(t("Ollama ne répond pas : démarrez-le ou installez-le ci-dessus."), true); return; }
   if (!st.models.some((m) => sameModel(m.name, model))) {
-    trJobMsg(`Téléchargez d’abord le modèle ${model} (bouton ci-dessus).`, true); return;
+    trJobMsg(t("Téléchargez d’abord le modèle {model} (bouton ci-dessus).", { model }), true); return;
   }
-  try { await api("/api/translate/job", { model }); } catch (e) { trJobMsg(e.message, true); return; }
+  try { await api("/api/translate/job", { model, lang: LANG }); } catch (e) { trJobMsg(e.message, true); return; }
   followOllamaJob();
 }
 let trFollowing = false;
@@ -1022,34 +1067,35 @@ async function followOllamaJob() {
   trFollowing = true;
   Object.assign(TR, { running: true, stop: false, engine: "ollama" });
   renderTr();
+  let target = LANG;
   try {
     for (;;) {
       const job = await (await api("/api/translate/job")).json();
-      TR.stats = await (await api("/api/translate")).json();
+      target = job.target || target;
+      TR.stats = await (await api(`/api/translate?lang=${target}`)).json();
       TR.running = !!job.running;
       renderTr();
       const left = job.rate > 0 ? (TR.stats.chars - TR.stats.chars_done) / job.rate : 0;
-      const eta = left > 5400 ? `${Math.round(left / 3600)} h` : `${Math.max(1, Math.round(left / 60))} min`;
-      const aside = job.skipped ? ` · ${plural(job.skipped, "texte mis de côté", "textes mis de côté")}` : "";
+      const aside = job.skipped ? ` · ${tn(job.skipped, "{n} texte mis de côté", "{n} textes mis de côté")}` : "";
       if (job.running) {
-        trJobMsg(`Traduction avec ${job.model}… ` + (job.rate
-          ? `${Math.round(job.rate).toLocaleString("fr-CH")} caractères/s · encore ${eta} environ${aside}`
-          : "premier texte (le modèle se charge en mémoire)") + (job.note ? ` · ${job.note}` : "") + ".");
+        trJobMsg(t("Traduction en {lang} avec {model}…", { lang: langName(target), model: job.model }) + " " + (job.rate
+          ? t("{rate} caractères/s · encore {eta} environ", { rate: nf(Math.round(job.rate)), eta: eta(left) }) + aside
+          : t("premier texte (le modèle se charge en mémoire)")) + (job.note ? ` · ${fmtMsg(job.note)}` : "") + ".");
         await sleep(2000);
         continue;
       }
-      if (job.error) trJobMsg(`La traduction s’est arrêtée : ${job.error}. Ce qui est fait est enregistré ; vous pouvez reprendre.`, true);
-      else if (job.cancelled) trJobMsg(`En pause${aside}. « Reprendre la traduction » continue là où elle s’est arrêtée.`);
-      else trJobMsg(`Traduction terminée${aside}.` + (job.skipped ? " « Reprendre la traduction » réessaie les textes mis de côté." : ""));
+      if (job.error) trJobMsg(t("La traduction s’est arrêtée : {error}. Ce qui est fait est enregistré ; vous pouvez reprendre.", { error: fmtMsg(job.error) }), true);
+      else if (job.cancelled) trJobMsg(t("En pause{aside}. « Reprendre la traduction » continue là où elle s’est arrêtée.", { aside }));
+      else trJobMsg(t("Traduction terminée{aside}.", { aside }) + (job.skipped ? " " + t("« Reprendre la traduction » réessaie les textes mis de côté.") : ""));
       break;
     }
   } catch (e) {
-    trJobMsg(`Suivi interrompu : ${e.message}`, true);
+    trJobMsg(t("Suivi interrompu : {error}", { error: e.message }), true);
   } finally {
     trFollowing = false; TR.running = false;
-    try { TR.stats = await (await api("/api/translate/finish", {})).json(); } catch { /* keep counts */ }
-    renderTr();
-    if (S.view_lang === "fr" || S.text) runSearchNow();
+    try { TR.stats = await (await api(`/api/translate/finish?lang=${target}`, {})).json(); } catch { /* keep counts */ }
+    if (target !== LANG) refreshTrStats(); else renderTr();
+    if (S.view_tr || S.text) runSearchNow();
   }
 }
 
@@ -1059,7 +1105,7 @@ const sameModel = (a, b) => {
   const n = (m) => (m.includes(":") ? m : `${m}:latest`);
   return n(a.trim()) === n(b.trim());
 };
-const fmtGo = (b) => `${(b / 1e9).toLocaleString("fr-CH", { maximumFractionDigits: 1 })} Go`;
+const fmtGo = (b) => t("{n} Go", { n: (b / 1e9).toLocaleString(LOCALE[LANG], { maximumFractionDigits: 1 }) });
 async function ollamaStatus(host) {
   try { return await (await api(`/api/ollama${host ? `?host=${encodeURIComponent(host)}` : ""}`)).json(); } catch { return null; }
 }
@@ -1069,28 +1115,31 @@ async function renderOllamaBox(box, model, host) {
   if (box.dataset.model !== model) return; // the model changed while we waited
   const pull = st?.pulls?.[model];
   const have = st?.models?.find((m) => sameModel(m.name, model));
-  const row = (cls, msg, actions = "") => `<span class="dot ${cls}"></span><span class="ol-msg">${msg}</span>${actions ? `<span class="ol-actions">${actions}</span>` : ""}`;
+  const row = (cls, message, actions = "") => `<span class="dot ${cls}"></span><span class="ol-msg">${message}</span>${actions ? `<span class="ol-actions">${actions}</span>` : ""}`;
+  const m = `<b>${esc(model)}</b>`;
   let html;
-  if (!st) html = row("off", "Impossible de joindre le serveur de l’application.");
+  if (!st) html = row("off", t("Impossible de joindre le serveur de l’application."));
   else if (!st.running && !st.installed) {
-    html = row("off", "Ollama n’est pas installé sur cet ordinateur. Installez-le (gratuit), puis revenez ici.",
-      `<a class="btn primary" href="${esc(st.download_url)}" target="_blank" rel="noopener">Télécharger Ollama ↗</a>
-       <button type="button" class="btn" data-ol="recheck">Vérifier à nouveau</button>`);
+    html = row("off", t("Ollama n’est pas installé sur cet ordinateur. Installez-le (gratuit), puis revenez ici."),
+      `<a class="btn primary" href="${esc(st.download_url)}" target="_blank" rel="noopener">${t("Télécharger Ollama ↗")}</a>
+       <button type="button" class="btn" data-ol="recheck">${t("Vérifier à nouveau")}</button>`);
   } else if (!st.running) {
-    html = row("warn", "Ollama est installé mais ne tourne pas.",
-      `<button type="button" class="btn primary" data-ol="start">Démarrer Ollama</button>
-       <button type="button" class="btn" data-ol="recheck">Vérifier à nouveau</button>`);
+    html = row("warn", t("Ollama est installé mais ne tourne pas."),
+      `<button type="button" class="btn primary" data-ol="start">${t("Démarrer Ollama")}</button>
+       <button type="button" class="btn" data-ol="recheck">${t("Vérifier à nouveau")}</button>`);
   } else if (pull?.running) {
     const pctPull = pull.total ? Math.round((100 * pull.completed) / pull.total) : 0;
-    html = row("busy", `Téléchargement de <b>${esc(model)}</b> : ${pull.total ? `${pctPull} % (${fmtGo(pull.completed)} / ${fmtGo(pull.total)})` : esc(pull.status)}…`) +
+    const prog = pull.total ? `${pctPull} % (${fmtGo(pull.completed)} / ${fmtGo(pull.total)})` : esc(pull.status || "…");
+    html = row("busy", t("Téléchargement de {model} : {progress}…", { model: m, progress: prog })) +
       `<div class="progress"><div style="width:${pctPull}%"></div></div>`;
     setTimeout(() => { if (box.dataset.model === model) renderOllamaBox(box, model, host); }, 1000);
   } else if (have) {
-    html = row("on", `Ollama ${esc(st.version || "")} · modèle <b>${esc(model)}</b> installé${have.size ? ` (${fmtGo(have.size)})` : ""}.`);
+    html = row("on", t("Ollama {version} · modèle {model} installé{size}.",
+      { version: esc(st.version || ""), model: m, size: have.size ? ` (${fmtGo(have.size)})` : "" }));
   } else {
-    const err = pull?.error ? `<br><span class="err">Le téléchargement a échoué : ${esc(pull.error)}</span>` : "";
-    html = row("warn", `Ollama ${esc(st.version || "")} est prêt, mais le modèle <b>${esc(model)}</b> n’est pas installé.${err}`,
-      `<button type="button" class="btn primary" data-ol="pull">Télécharger le modèle</button>`);
+    const err = pull?.error ? `<br><span class="err">${t("Le téléchargement a échoué : {error}", { error: esc(fmtMsg(pull.error)) })}</span>` : "";
+    html = row("warn", t("Ollama {version} est prêt, mais le modèle {model} n’est pas installé.", { version: esc(st.version || ""), model: m }) + err,
+      `<button type="button" class="btn primary" data-ol="pull">${t("Télécharger le modèle")}</button>`);
   }
   box.innerHTML = html;
   if (pull && !pull.running && pull.done && box.dataset.pulled !== model) { // just finished
@@ -1121,7 +1170,7 @@ function updateAiOllamaBox() {
 }
 $("#aiBase").addEventListener("input", debounce(updateAiOllamaBox, 500));
 $("#aiModel").addEventListener("input", debounce(updateAiOllamaBox, 500));
-$("#optViewFr").addEventListener("change", (e) => { S.view_lang = e.target.checked ? "fr" : "orig"; runSearchNow(); });
+$("#optViewTr").addEventListener("change", (e) => { S.view_tr = e.target.checked; runSearchNow(); });
 $("#optSearchOrig").addEventListener("change", (e) => { S.search_original = e.target.checked; runSearchNow(); });
 
 /* ---- AI search */
@@ -1143,34 +1192,37 @@ async function loadAI() {
   $("#aiBase").value = s.base_url; $("#aiModel").value = s.model;
   $("#aiPreset").value = Object.entries(PRESETS).find(([, p]) => p.base === s.base_url)?.[0] || "custom";
   updateAiOllamaBox();
-  $("#aiKey").value = ""; $("#aiKey").placeholder = s.key_hint ? `enregistré (${s.key_hint}) — laisser vide pour le conserver` : "sk-…";
+  $("#aiKey").value = ""; $("#aiKey").placeholder = s.key_hint ? t("enregistré ({hint}) — laisser vide pour le conserver", { hint: s.key_hint }) : "sk-…";
   $("#aiRemember").checked = !!store.get("zivi.aiKey", "");
   $("#aiTopK").value = String(S.ai_top_k);
   aiStatus(info);
   if (info.running) pollAI();
 }
+/* "original", "FR", "DE"…: the AI indexes already built for this model */
+const builtNames = (built, model) => Object.keys(built || {}).map((k) => (k === model ? t("texte original") : k.split("@")[1]?.toUpperCase() || k));
 function aiStatus(info, err) {
   const el = $("#aiStatus"); el.classList.toggle("err", !!err);
   if (err) { el.textContent = err; return; }
-  const skipped = info.skipped ? ` · ${plural(info.skipped, "texte ignoré", "textes ignorés")} (trop long ou trop lent)` : "";
+  const skipped = info.skipped ? ` · ${tn(info.skipped, "{n} texte ignoré", "{n} textes ignorés")} (${t("trop long ou trop lent")})` : "";
   if (info.running) {
-    el.textContent = `Construction de l’index : ${nf(info.done)} / ${nf(info.total)} · lots de ${info.batch}${skipped}` +
-      (info.note ? ` · ${info.note}` : "");
-  } else if (info.error) { el.textContent = `La dernière construction s’est arrêtée : ${info.error}. Ce qui est fait est gardé ; « Construire l’index » reprend.`; el.classList.add("err"); }
-  else if (info.cancelled) el.textContent = `Arrêtée à ${nf(info.done)} / ${nf(info.total)}. « Construire l’index » reprend là où elle s’est arrêtée.`;
-  else if (info.ready) el.textContent = `Index IA prêt : ${nf(info.vectors)} affectations (${info.model})${skipped}. Choisissez « IA » ou « Les deux » à côté du champ de recherche.`;
-  else el.textContent = "Pas encore d’index IA pour ce modèle.";
+    el.textContent = t("Construction de l’index : {done} / {total} · lots de {batch}", { done: nf(info.done), total: nf(info.total), batch: info.batch }) + skipped +
+      (info.note ? ` · ${fmtMsg(info.note)}` : "");
+  } else if (info.error) { el.textContent = t("La dernière construction s’est arrêtée : {error}. Ce qui est fait est gardé ; « Construire l’index » reprend.", { error: fmtMsg(info.error) }); el.classList.add("err"); }
+  else if (info.cancelled) el.textContent = t("Arrêtée à {done} / {total}. « Construire l’index » reprend là où elle s’est arrêtée.", { done: nf(info.done), total: nf(info.total) });
+  else if (info.ready) el.textContent = t("Index IA prêt : {n} affectations ({model}){skipped}. Choisissez « IA » ou « Les deux » à côté du champ de recherche.", { n: nf(info.vectors), model: info.model, skipped });
+  else el.textContent = t("Pas encore d’index IA pour ce modèle dans cette langue.");
   // what the next build would do: new assignments, earlier failures, newly translated texts
   if (!info.running && !info.error && info.pending) {
-    el.textContent += ` ${plural(info.pending, "affectation est", "affectations sont")} à calculer : « Construire l’index » s’en charge.`;
+    el.textContent += " " + t("{count} : « Construire l’index » s’en charge.",
+      { count: tn(info.pending, "{n} affectation est à calculer", "{n} affectations sont à calculer") });
   }
   if (info.coverage) {
     const c = info.coverage;
-    $("#aiFrench").checked = !!info.french;
-    $("#aiFrenchHint").textContent = `Utilise la traduction française quand elle existe, sinon le texte original : ` +
-      `${nf(c.french + c.translated)} affectations sur ${nf(c.total)} sont en français ` +
-      `(${nf(c.french)} d’origine, ${nf(c.translated)} traduites). Utile avec un modèle surtout anglais comme ` +
-      "nomic-embed-text : une recherche en français trouve alors mieux les affectations allemandes et italiennes.";
+    $("#aiTranslated").checked = !!info.translated;
+    const built = builtNames(info.built, info.settings?.model);
+    $("#aiTranslatedHint").textContent = t("Utilise la traduction dans la langue de l’interface quand elle existe (Traduction), sinon le texte original : {have} affectations sur {total} sont en {lang} ({native} d’origine, {translated} traduites). Chaque langue garde son propre index.",
+      { have: nf(c.native + c.translated), total: nf(c.total), lang: langName(c.lang), native: nf(c.native), translated: nf(c.translated) }) +
+      (built.length ? " " + t("Index déjà construits : {list}.", { list: built.join(", ") }) : "");
   }
   $("#aiStop").hidden = !info.running;
   $("#aiBuild").disabled = $("#aiRebuild").disabled = !!info.running;
@@ -1178,7 +1230,7 @@ function aiStatus(info, err) {
   $("#aiNavBadge").hidden = !badge; $("#aiNavBadge").textContent = badge;
 }
 async function saveAI() {
-  const body = { base_url: $("#aiBase").value, model: $("#aiModel").value };
+  const body = { base_url: $("#aiBase").value, model: $("#aiModel").value, lang: LANG };
   const key = $("#aiKey").value.trim();
   if (key) body.api_key = key;
   if ($("#aiRemember").checked && key) store.set("zivi.aiKey", key);
@@ -1189,7 +1241,7 @@ $("#aiTest").addEventListener("click", async () => {
   try {
     await saveAI(); const r = await (await api("/api/ai/test", {})).json();
     $("#aiStatus").classList.remove("err");
-    $("#aiStatus").textContent = `Connecté. Le modèle renvoie des vecteurs de ${r.dimensions} dimensions.`;
+    $("#aiStatus").textContent = t("Connecté. Le modèle renvoie des vecteurs de {n} dimensions.", { n: r.dimensions });
   } catch (e) { aiStatus(null, e.message); }
 });
 let aiPolling = false;
@@ -1209,21 +1261,57 @@ function pollAI() {
   poll();
 }
 async function startAI(rebuild) {
-  if (rebuild && !confirm("Tout reconstruire ? Les vecteurs de ce modèle seront recalculés pour toutes les affectations.")) return;
+  if (rebuild && !confirm(t("Tout reconstruire ? Les vecteurs de ce modèle (dans cette langue) seront recalculés pour toutes les affectations."))) return;
   try { await saveAI(); await api("/api/ai/index", { rebuild }); } catch (e) { aiStatus(null, e.message); return; }
   pollAI();
 }
 $("#aiBuild").addEventListener("click", () => startAI(false));
-$("#aiFrench").addEventListener("change", async (e) => {
-  try { await api("/api/ai/config", { french: e.target.checked }); } catch (err) { aiStatus(null, err.message); return; }
+$("#aiTranslated").addEventListener("change", async (e) => {
+  try { await api("/api/ai/config", { translated: e.target.checked, lang: LANG }); } catch (err) { aiStatus(null, err.message); return; }
   loadAI(); // the count of assignments to (re)compute changes
 });
 $("#aiRebuild").addEventListener("click", () => startAI(true));
-$("#aiStop").addEventListener("click", async () => { await api("/api/ai/stop", {}); $("#aiStatus").textContent = "Arrêt après le lot en cours…"; });
+$("#aiStop").addEventListener("click", async () => { await api("/api/ai/stop", {}); $("#aiStatus").textContent = t("Arrêt après le lot en cours…"); });
 (async () => { // restore a remembered token into the local server after a restart
   const key = store.get("zivi.aiKey", "");
   if (key) { try { await api("/api/ai/config", { api_key: key }); } catch { /* ignore */ } }
 })();
+
+/* ------------------------------------------------------------------ language menu */
+function renderLangMenu() {
+  $("#langBtn").innerHTML = `${FLAGS[LANG]}<span class="lang-code">${LANG.toUpperCase()}</span>
+    <svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  $("#langBtn").setAttribute("aria-label", `${t("Langue")}${COLON()}${LANG_NATIVE[LANG]}`);
+  $("#langList").innerHTML = Object.keys(LANG_NATIVE).map((l) => `<li role="option" tabindex="-1" data-lang="${l}" aria-selected="${l === LANG}" lang="${l}">
+    ${FLAGS[l]}<span>${LANG_NATIVE[l]}</span>${l === LANG ? '<span class="tick" aria-hidden="true">✓</span>' : ""}</li>`).join("");
+}
+function setLangMenu(open) {
+  $("#langList").hidden = !open;
+  $("#langBtn").setAttribute("aria-expanded", String(open));
+  if (open) ($(`#langList [aria-selected=true]`) || $("#langList li")).focus();
+}
+$("#langBtn").addEventListener("click", () => setLangMenu($("#langList").hidden));
+$("#langList").addEventListener("click", (e) => { const li = e.target.closest("[data-lang]"); if (li) chooseLang(li.dataset.lang); });
+$("#langList").addEventListener("keydown", (e) => {
+  const items = $$("#langList li"), i = items.indexOf(document.activeElement);
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); items[(i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length].focus(); }
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (i >= 0) chooseLang(items[i].dataset.lang); }
+});
+async function chooseLang(lang) {
+  setLangMenu(false);
+  if (lang === LANG) return;
+  setLang(lang);
+  try { await api("/api/prefs", { lang }); } catch { /* the server keeps the previous language */ }
+  refreshUi();
+}
+/* everything drawn by the script, in the new language */
+function refreshUi() {
+  renderLangMenu(); renderLayerControl(); renderCenters();
+  runSearchNow();
+  if (openId != null && !$("#drawer").hidden) openDetail(openId);
+  if ($("#dbDlg").open) showSection(panelSec); else refreshTrStats();
+  if (!$("#adv").hidden) fillAdvanced();
+}
 
 /* ------------------------------------------------------------------ export, tabs, start */
 $("#exportBtn").addEventListener("click", async () => {
@@ -1240,11 +1328,15 @@ function showPane(id) {
 $$(".tabs button").forEach((b) => b.addEventListener("click", () => showPane(b.dataset.pane === "map" ? "mapPane" : b.dataset.pane)));
 showPane("results");
 
+setLang(LANG); // translates the static page
+renderLangMenu();
+renderLayerControl();
 bindInputs();
-$("#optViewFr").checked = S.view_lang === "fr";
+$("#optViewTr").checked = !!S.view_tr;
 $("#optSearchOrig").checked = S.search_original !== false;
 $(`input[name=trEngine][value=${store.get("zivi.trEngine", "ollama") === "browser" ? "browser" : "ollama"}]`).checked = true;
-loadTrSettings().then(refreshTrStats);
 $("#favOnly").setAttribute("aria-pressed", String(!!S.favorites_only));
 document.body.classList.toggle("fav-mode", !!S.favorites_only);
-runSearchNow();
+api("/api/prefs", { lang: LANG }).catch(() => {}); // translations and AI index follow the interface
+loadTrSettings().then(refreshTrStats);
+loadLabels().finally(runSearchNow);

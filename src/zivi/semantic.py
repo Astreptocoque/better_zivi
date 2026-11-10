@@ -20,6 +20,7 @@ import numpy as np
 
 from . import config
 from .converter import EMBEDDINGS_SQL
+from .messages import ZiviError, as_msg, msg
 
 MAX_CHARS = 6000  # keep each text well under typical 8k-token limits
 
@@ -51,7 +52,7 @@ def assignment_text(row: dict, task_areas: list[str]) -> str:
     return "\n".join(p for p in parts if p)[:MAX_CHARS]
 
 
-class BatchFailed(RuntimeError):
+class BatchFailed(ZiviError):
     """A batch that may succeed when smaller or later: timeout, overload, input too long."""
 
 
@@ -72,12 +73,12 @@ class Embedder:
                            timeout=httpx.Timeout(self.timeout, connect=15.0),
                            json={"model": self.s.model, "input": texts})
         except (httpx.TimeoutException, httpx.TransportError) as exc:
-            raise BatchFailed(f"pas de réponse du service ({type(exc).__name__})") from exc
+            raise BatchFailed("no_response", kind=type(exc).__name__) from exc
         if r.status_code in (400, 413, 429) or r.status_code >= 500:
             # overloaded, rate-limited, or a text too long for the model's context
-            raise BatchFailed(f"Erreur de l'API d'embeddings {r.status_code} : {r.text[:300]}")
+            raise BatchFailed("api_error", status=r.status_code, body=r.text[:300])
         if r.status_code >= 400:  # wrong token, unknown model…: retrying won't help
-            raise RuntimeError(f"Erreur de l'API d'embeddings {r.status_code} : {r.text[:300]}")
+            raise ZiviError("api_error", status=r.status_code, body=r.text[:300])
         data = sorted(r.json()["data"], key=lambda d: d.get("index", 0))
         vecs = np.array([d["embedding"] for d in data], dtype=np.float32)
         norms = np.linalg.norm(vecs, axis=1, keepdims=True)
@@ -129,7 +130,8 @@ class SemanticIndex:
         self.load(db, model)
 
     def build(self, db_path: str, texts: dict[int, str], settings: AISettings,
-              batch: int | None = None, retries: int = 3, pause: float = 3.0) -> None:
+              batch: int | None = None, retries: int = 3, pause: float = 3.0,
+              key: str | None = None) -> None:
         """Embed every assignment whose text changed since the last build (runs in a thread).
 
         Each batch is saved as soon as it is done, so a stopped or failed build resumes
@@ -137,6 +139,9 @@ class SemanticIndex:
         two; a single text that still fails is skipped (counted in progress["skipped"])
         instead of stopping everything.
         """
+        # vectors are stored under `key` (the model, or 'model@de' for an index on the text
+        # translated into German); the embedding API is always called with the model
+        key = key or settings.model
         size = batch or (8 if settings.local else 64)
         self.cancel = False
         self.progress = {"running": True, "done": 0, "total": 0, "error": None,
@@ -147,7 +152,7 @@ class SemanticIndex:
             db.execute(EMBEDDINGS_SQL)
             have = {r[0]: r[1] for r in db.execute(
                 "SELECT assignment_id, text_hash FROM embeddings WHERE model=?",
-                (settings.model,))}
+                (key,))}
             todo = []
             for aid, text in texts.items():
                 h = hashlib.sha1(text.encode()).hexdigest()
@@ -168,7 +173,8 @@ class SemanticIndex:
                         self.progress["note"] = None
                         break
                     except BatchFailed as exc:
-                        self.progress["note"] = f"nouvel essai {attempt + 1}/{retries - 1} : {exc}"
+                        self.progress["note"] = msg("retry", attempt=attempt + 1, of=retries - 1,
+                                                    error=as_msg(exc))
                         if attempt < retries - 1 and not self.cancel:
                             time.sleep(pause * (attempt + 1))
                 if vecs is None:
@@ -183,17 +189,17 @@ class SemanticIndex:
                     continue
                 vecs = vecs / np.maximum(np.linalg.norm(vecs, axis=1, keepdims=True), 1e-12)
                 db.executemany("INSERT OR REPLACE INTO embeddings VALUES (?,?,?,?)",
-                               [(aid, settings.model, h, v.tobytes())
+                               [(aid, key, h, v.tobytes())
                                 for (aid, _, h), v in zip(chunk, vecs)])
                 db.commit()
                 i += len(chunk)
                 self.progress["done"] = i - self.progress["skipped"]
         except Exception as exc:  # reported to the UI
-            self.progress["error"] = str(exc)
+            self.progress["error"] = as_msg(exc)
         finally:
             if db is not None:
                 try:  # use what is already done, even after a stop or an error
-                    self.load(db, settings.model)
+                    self.load(db, key)
                 finally:
                     db.close()
             self.progress["running"] = False
@@ -206,7 +212,6 @@ class SemanticIndex:
         q = q / max(float(np.linalg.norm(q)), 1e-12)
         with self._lock:
             if self.mat.shape[1] != q.shape[0]:
-                raise RuntimeError(f"l'index a été construit avec un autre modèle ({self.model}) ; "
-                                   "reconstruisez-le dans Réglages IA")
+                raise ZiviError("index_other_model", model=self.model)
             sims = self.mat @ q
             return dict(zip(self.ids.tolist(), sims.tolist()))
