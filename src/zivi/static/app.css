@@ -122,7 +122,10 @@ h3 { font-size: 1rem; margin: 0 0 .5rem; display: flex; align-items: center; jus
 .seg span:hover { background: var(--line); color: var(--ink); }
 .seg input:checked + span { background: var(--spruce); color: var(--panel); font-weight: 700; }
 .seg input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 1px; }
-.actions { display: flex; gap: .4rem; }
+.actions { display: flex; align-items: center; gap: .4rem; }
+/* every header button the same height, whatever it holds (text, flag, icon) */
+.actions .btn { height: 2.5rem; display: inline-flex; align-items: center; gap: .4rem; padding-top: 0; padding-bottom: 0; }
+.lang-menu { display: flex; }
 .btn {
   text-decoration: none; color: var(--ink);
   border: 1px solid var(--line); background: var(--panel); border-radius: var(--radius);
@@ -403,7 +406,7 @@ pre { background: var(--mist); padding: .6rem; border-radius: 6px; font-size: .8
 /* ---- "Base de données" button and floating window */
 /* language menu: flag + code, a small list of flags and native names */
 .lang-menu { position: relative; }
-.lang-btn { display: inline-flex; align-items: center; gap: .4rem; padding-right: .5rem; }
+.lang-btn { padding-right: .6rem; }
 .flag { width: 21px; height: 14px; border-radius: 2px; box-shadow: 0 0 0 1px rgba(0,0,0,.18); flex-shrink: 0; display: block; }
 .lang-code { font-weight: 700; font-size: .85rem; letter-spacing: .03em; }
 .lang-btn .chev { width: 13px; height: 13px; color: var(--slate); transition: transform .15s; }
