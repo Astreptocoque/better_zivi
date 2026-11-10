@@ -611,7 +611,10 @@ async function openDetail(id) {
   try { d = await (await api(withLang(`/api/assignment/${id}`))).json(); } catch (e) { alert(e.message); return; }
   openId = id;
   if (d.favorite) favs.add(id); else favs.delete(id);
-  const fact = (k, v) => (v === null || v === undefined || v === "" ? "" : `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`);
+  // each attribute can be clicked (a "+" shows on hover) to filter on that value
+  const applyAttr = (filter) => (filter ? ` data-apply="${esc(JSON.stringify(filter))}" tabindex="0" role="button" title="${esc(t("Filtrer : afficher les affectations avec cette valeur"))}"` : "");
+  const fact = (k, v, filter) => (v === null || v === undefined || v === "" ? "" : `<div${applyAttr(filter)}><dt>${k}</dt><dd>${esc(v)}</dd></div>`);
+  const yn = (field) => (d[field] == null ? null : { [field]: d[field] ? 1 : 0 });
   const src = d.language || "";
   const lang = src ? ` lang="${esc(src)}"` : "";
   // data-tr marks the original-language texts the "Traduire" button translates
@@ -620,7 +623,7 @@ async function openDetail(id) {
     ? `<section class="d-sec"><h3>${title}</h3><p${field ? ` data-tr data-field="${field}"${lang}` : ""}>${esc(text)}</p></section>` : "");
   const addr = (d.locations || []).map((l) => l.label || [l.plz, l.city].filter(Boolean).join(" ")).filter(Boolean);
   $("#drawerBody").innerHTML = `
-    <p class="d-num">${t("N°")} ${esc(d.number)}${d.canton ? " · " + esc(d.canton) : ""}${d.sector ? ` · <span class="sec" style="--c:${sectorColor(sectorCode(d.sector))}">${esc(sectorName(d.sector))}</span>` : ""}</p>
+    <p class="d-num">${t("N°")} ${esc(d.number)}${(d.canton || "").split(",").filter(Boolean).map((c) => ` · <span class="d-attr"${applyAttr({ canton: [c] })}>${esc(c)}</span>`).join("")}${d.sector ? ` · <span class="sec d-attr" style="--c:${sectorColor(sectorCode(d.sector))}"${applyAttr({ sector: [d.sector] })}>${esc(sectorName(d.sector))}</span>` : ""}</p>
     <h2 class="d-title" id="dTitle" data-tr data-field="title"${lang}>${esc(d.title)}</h2>
     <p class="d-who">${esc(d.employer)} · ${esc(d.place || "")}</p>
     <p class="d-actions"><a class="btn primary" href="${esc(d.url)}" target="_blank" rel="noopener">${t("Ouvrir sur ZiviConnect")}</a>
@@ -629,16 +632,16 @@ async function openDetail(id) {
        ${favBtn(id)}</p>
     <p class="tr-status" id="trStatus" role="status" hidden></p>
     <dl class="d-grid">
-      ${fact(t("Durée minimale"), d.min_weeks ? tn(d.min_weeks, "{n} semaine", "{n} semaines") : "")}
-      ${fact(t("Heures par semaine"), d.hours_per_week)}
-      ${fact(t("Modèle d’horaire"), d.work_model ? dataLabel(d.work_model) : "")}
-      ${fact(t("Logement"), YN(d.housing))}${fact(t("Repas"), YN(d.meals))}
-      ${fact(t("Travail le week-end"), JNM(d.weekend))}${fact(t("Travail de nuit"), JNM(d.night))}
-      ${fact(t("Contrôle de réputation"), YN(d.reputation_check))}
-      ${fact(t("Programme prioritaire"), YN(d.priority_program))}
-      ${fact(t("À l’étranger"), d.abroad ? t("Oui") : "")}
+      ${fact(t("Durée minimale"), d.min_weeks ? tn(d.min_weeks, "{n} semaine", "{n} semaines") : "", d.min_weeks && { min_weeks_min: d.min_weeks, min_weeks_max: d.min_weeks })}
+      ${fact(t("Heures par semaine"), d.hours_per_week, d.hours_per_week && { hours_min: d.hours_per_week, hours_max: d.hours_per_week })}
+      ${fact(t("Modèle d’horaire"), d.work_model ? dataLabel(d.work_model) : "", d.work_model && { work_model: [d.work_model] })}
+      ${fact(t("Logement"), YN(d.housing), yn("housing"))}${fact(t("Repas"), YN(d.meals), yn("meals"))}
+      ${fact(t("Travail le week-end"), JNM(d.weekend), d.weekend && { weekend: [d.weekend] })}${fact(t("Travail de nuit"), JNM(d.night), d.night && { night: [d.night] })}
+      ${fact(t("Contrôle de réputation"), YN(d.reputation_check), yn("reputation_check"))}
+      ${fact(t("Programme prioritaire"), YN(d.priority_program), yn("priority_program"))}
+      ${fact(t("À l’étranger"), d.abroad ? t("Oui") : "", d.abroad ? { abroad: 1 } : null)}
     </dl>
-    <p>${(d.task_areas || []).map((x) => esc(dataLabel(x))).join(", ")}</p>
+    <p class="d-tasks">${(d.task_areas || []).map((x) => `<span class="d-attr"${applyAttr({ task_areas: [x] })}>${esc(dataLabel(x))}</span>`).join("")}</p>
     ${d.rare?.length ? `<section class="d-sec"><h3>${t("Ce qui la rend rare")}</h3><div class="rare">${rareChips(d.rare)}</div></section>` : ""}
     ${sec(t("Tâches"), d.tasks, "tasks")}
     ${sec(t("Compétences requises"), d.required_skills, "required_skills")}
@@ -833,6 +836,26 @@ function calendar(weeks) {
     `<span class="${(from && w >= from && (!to || w <= to)) || (!from && to && w <= to) ? "in" : ""}">${w.slice(8)}.${w.slice(5, 7)}</span>`).join("")}</div>`).join("")}</div>`;
 }
 function closeDrawer() { $("#drawer").hidden = true; openId = null; }
+/* An attribute of the open entry was clicked: add that filter, show the matching entries.
+   Lists (sector, canton, task types…) gain the value; yes/no and ranges take it. */
+function applyAttribute(el) {
+  const filter = JSON.parse(el.dataset.apply);
+  for (const [k, v] of Object.entries(filter)) {
+    if (Array.isArray(v)) S[k] = [...new Set([...(S[k] || []), ...v])];
+    else S[k] = v;
+  }
+  if (filter.task_areas) S.task_areas_mode = S.task_areas.length > 1 ? S.task_areas_mode : "any";
+  closeDrawer();
+  bindInputs();
+  showPane("results");
+  $("#results").scrollTop = 0;
+  runSearchNow();
+}
+$("#drawerBody").addEventListener("click", (e) => { const el = e.target.closest("[data-apply]"); if (el) applyAttribute(el); });
+$("#drawerBody").addEventListener("keydown", (e) => {
+  const el = e.target.closest("[data-apply]");
+  if (el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); applyAttribute(el); }
+});
 $("#drawerClose").addEventListener("click", closeDrawer);
 $("#drawer").addEventListener("click", (e) => { if (e.target.id === "drawer") closeDrawer(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#drawer").hidden) closeDrawer(); });
