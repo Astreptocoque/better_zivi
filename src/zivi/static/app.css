@@ -366,6 +366,7 @@ button.rare-chip:hover { border-color: #8A5CD6; }
   background: #fff; color: #333; border: 2px solid rgba(0, 0, 0, .2) !important; border-radius: 4px;
 }
 .map-full-btn:hover { background: #f4f4f4; }
+.map-full-btn:disabled { opacity: .45; cursor: default; }
 .map-full-btn svg { width: 16px; height: 16px; }
 .map-full-btn[aria-pressed=true] { color: var(--spruce); }
 /* full-screen map: only the map (and the detail panel over it) */

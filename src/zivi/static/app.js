@@ -158,6 +158,31 @@ const FullControl = L.Control.extend({
   },
 });
 const fullControl = new FullControl().addTo(map);
+/* Refocus: zoom the map to the entries currently shown (after panning, or new filters). */
+const ICON_FIT = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.2" fill="currentColor"/><circle cx="8" cy="8" r="5.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 .8v2.4M8 12.8v2.4M.8 8h2.4M12.8 8h2.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+const FitControl = L.Control.extend({
+  options: { position: "topleft" },
+  onAdd() {
+    const b = L.DomUtil.create("button", "map-full-btn leaflet-bar");
+    b.type = "button";
+    b.innerHTML = ICON_FIT;
+    L.DomEvent.disableClickPropagation(b);
+    b.addEventListener("click", fitToResults);
+    this.btn = b;
+    return b;
+  },
+});
+const fitControl = new FitControl().addTo(map);
+function fitToResults() {
+  if (!cluster.getLayers().length) return;
+  map.fitBounds(cluster.getBounds(), { padding: [30, 30], maxZoom: 13 });
+}
+function renderFitBtn() {
+  const label = t("Recentrer sur les affectations affichées");
+  fitControl.btn.title = label;
+  fitControl.btn.setAttribute("aria-label", label);
+  fitControl.btn.disabled = !cluster.getLayers().length;
+}
 function renderFullBtn() {
   const on = document.body.classList.contains("map-full");
   const label = on ? t("Quitter la carte en plein écran") : t("Carte en plein écran");
@@ -198,6 +223,7 @@ function drawPoints(points) {
     return m;
   });
   cluster.addLayers(markers);
+  renderFitBtn();
   if (!fitted && markers.length) { map.fitBounds(cluster.getBounds(), { padding: [20, 20], maxZoom: 11 }); fitted = true; }
 }
 map.on("popupopen", (e) => {
@@ -1389,7 +1415,7 @@ async function chooseLang(lang) {
 }
 /* everything drawn by the script, in the new language */
 function refreshUi() {
-  renderLangMenu(); renderLayerControl(); renderCenters(); renderFullBtn();
+  renderLangMenu(); renderLayerControl(); renderCenters(); renderFullBtn(); renderFitBtn();
   runSearchNow();
   if (openId != null && !$("#drawer").hidden) openDetail(openId);
   if ($("#dbDlg").open) showSection(panelSec); else refreshTrStats();
