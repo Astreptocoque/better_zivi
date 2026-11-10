@@ -7,9 +7,11 @@ while ignoring that field's own filter, so multi-select filters behave as expect
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
+import time
 import re
 import sqlite3
 import threading
@@ -19,6 +21,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from .converter import FTS_COLUMNS, FTS_VERSION, FTS_WEIGHTS, TRANSLATIONS_SQL, build_fts, fts_schema
+from .ollama import DEFAULT_HOST, TRANSLATE_MODEL, host_from
 from .semantic import AISettings, SemanticIndex, assignment_text
 
 SUMMARY_FIELDS = ("id", "number", "title", "employer", "place", "canton", "sector",
@@ -40,6 +44,17 @@ def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dp, dl = p2 - p1, math.radians(lon2 - lon1)
     a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
     return 2 * r * math.asin(math.sqrt(a))
+
+
+# Texts translated by the "Traduire la base" job, in the order they are handed out:
+# titles first so the list reads in French early on.
+TR_FIELDS = ("title", "tasks", "required_skills", "desired_skills", "employer_description",
+             "courses", "how_to_apply")
+TR_TARGET = "fr"
+
+
+def text_hash(text: str) -> str:
+    return hashlib.sha1(text.strip().encode()).hexdigest()
 
 
 RARE_SHARE = 0.05  # a value shared by at most 5 % of all assignments counts as rare
@@ -93,6 +108,22 @@ def week_ord(iso: str) -> int:
 
 
 TOKEN_RE = re.compile(r'(-?"[^"]+"|\S+)')
+
+
+PHONE_RE = re.compile(r'"?\+?[\d][\d\s/.()-]{7,}"?')
+
+
+def phone_query(text: str) -> str:
+    """A query that is only a phone number ('041 980 61 83', '+41 41 980 61 83', '"079/123
+    45 67"') becomes its digits in national form, the way phones are indexed."""
+    if not PHONE_RE.fullmatch(text.strip()):
+        return text
+    digits = re.sub(r"\D", "", text)
+    if digits.startswith("0041"):
+        digits = "0" + digits[4:]
+    elif digits.startswith("41") and len(digits) == 11:
+        digits = "0" + digits[2:]
+    return digits if len(digits) >= 9 else text
 
 
 def fts_query(text: str) -> tuple[str | None, str | None]:
@@ -157,6 +188,10 @@ class Engine:
         # provider and model chosen in the UI (never the token), so the matching AI index
         # is loaded again after a restart
         self.ai_path = Path(self.db_path).with_name("ai_settings.json")
+        # database translation through Ollama (Base de données → Traduction)
+        self.tr_model, self.ollama_host = TRANSLATE_MODEL, DEFAULT_HOST
+        # build the AI index on the French text (translation where there is one)
+        self.ai_french = False
         self._load_ai_settings()
         self.load()
 
@@ -171,12 +206,17 @@ class Engine:
             self.ai.base_url = str(saved["base_url"])
         if saved.get("model") and not os.environ.get("ZIVI_AI_MODEL"):
             self.ai.model = str(saved["model"])
+        self.tr_model = str(saved.get("translate_model") or self.tr_model)
+        self.ai_french = bool(saved.get("ai_french", self.ai_french))
+        self.ollama_host = host_from(saved.get("ollama_host") or self.ollama_host)
 
     def save_ai_settings(self) -> None:
         self.ai_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.ai_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"base_url": self.ai.base_url, "model": self.ai.model}),
-                       "utf-8")
+        tmp.write_text(json.dumps({"base_url": self.ai.base_url, "model": self.ai.model,
+                                   "translate_model": self.tr_model,
+                                   "ai_french": self.ai_french,
+                                   "ollama_host": self.ollama_host}), "utf-8")
         tmp.replace(self.ai_path)
 
     # ------------------------------------------------------------------ favourites
@@ -185,6 +225,14 @@ class Engine:
             self.favorites = {int(i) for i in json.loads(self.fav_path.read_text("utf-8"))}
         except (OSError, ValueError, TypeError):
             self.favorites = set()
+
+    def clear_favorites(self) -> int:
+        with self.lock:
+            n = len(self.favorites)
+            self.favorites = set()
+            self.fav_path.parent.mkdir(parents=True, exist_ok=True)
+            self.fav_path.write_text("[]", "utf-8")
+            return n
 
     def set_favorite(self, i: int, on: bool) -> bool:
         with self.lock:
@@ -209,15 +257,27 @@ class Engine:
         with self.lock:
             self.rows, self.task_areas, self.weeks, self.locations = {}, {}, {}, {}
             self.rare, self.rarity, self.trait_keys = {}, {}, {}
+            self.how_to_apply: dict[int, str] = {}
+            self.tr: dict[str, str] = {}  # original-text hash -> French text
+            # texts the browser's translator kept failing on: left out of the to-do list
+            # until the next run asks to retry them (in memory only)
+            self.tr_failed: set[str] = set()
+            self._fts_fr_dirty, self._fts_fr_built = True, 0.0
             self.report: dict = {}
+            self.imported_at: float | None = None
             if not Path(self.db_path).exists():
                 return
             db = self.connect()
             try:
                 cols = ", ".join(SUMMARY_FIELDS + ("tasks", "required_skills", "desired_skills",
                                                    "employer_description", "courses"))
-                for r in db.execute(f"SELECT {cols} FROM assignments"):
-                    self.rows[r["id"]] = dict(r)
+                for r in db.execute(f"SELECT {cols}, how_to_apply FROM assignments"):
+                    row = dict(r)
+                    self.how_to_apply[r["id"]] = row.pop("how_to_apply") or ""
+                    self.rows[r["id"]] = row
+                db.execute(TRANSLATIONS_SQL)
+                self.tr = {h: t for h, t in db.execute(
+                    "SELECT src_hash, text FROM translations WHERE target=?", (TR_TARGET,))}
                 ta: dict[int, list[str]] = defaultdict(list)
                 for r in db.execute("SELECT assignment_id, label, code FROM task_areas"):
                     ta[r[0]].append(r[1] or r[2])
@@ -233,7 +293,16 @@ class Engine:
                 rep = db.execute("SELECT value FROM meta WHERE key='report'").fetchone()
                 if rep:
                     self.report = json.loads(rep[0])
+                when = db.execute("SELECT value FROM meta WHERE key='imported_at'").fetchone()
+                self.imported_at = float(when[0]) if when else self._guess_import_time()
                 self.semantic.load(db, self.ai.model)
+                # databases imported before the contact/address columns: upgrade in place
+                cols = [d[0] for d in db.execute("SELECT * FROM fts LIMIT 0").description]
+                version = db.execute("SELECT value FROM meta WHERE key='fts_version'").fetchone()
+                if cols != list(FTS_COLUMNS) or (version and version[0]) != FTS_VERSION:
+                    build_fts(db)
+                    db.row_factory = sqlite3.Row
+                    self._fts_fr_dirty = True
             finally:
                 db.close()
             self._compute_rarity()
@@ -269,9 +338,176 @@ class Engine:
 
     # ------------------------------------------------------------------ helpers
     def ai_texts(self) -> dict[int, str]:
-        return {i: assignment_text(r, self.task_areas.get(i, [])) for i, r in self.rows.items()}
+        """The text embedded for each assignment: the original, or with ai_french the French
+        version of each field where there is one. A model trained mostly on English
+        (nomic-embed-text) matches a French query far better against French text. Each
+        translation that arrives changes the text, so the next build redoes just those."""
+        if not self.ai_french or not self.tr:
+            return {i: assignment_text(r, self.task_areas.get(i, []))
+                    for i, r in self.rows.items()}
+        out = {}
+        for i, r in self.rows.items():
+            fr = dict(r)
+            for f in ("title", "tasks", "required_skills", "desired_skills",
+                      "employer_description"):
+                t = self.french(i, f)
+                if t:
+                    fr[f] = t
+            out[i] = assignment_text(fr, self.task_areas.get(i, []))
+        return out
 
-    def fts_ids(self, text: str) -> dict[int, float] | None:
+    def ai_french_coverage(self) -> dict:
+        """How many assignments have their AI text in French (original or translated)."""
+        n_fr = sum(1 for r in self.rows.values() if r.get("language") == TR_TARGET)
+        n_tr = sum(1 for i, r in self.rows.items() if r.get("language") != TR_TARGET
+                   and self.french(i, "title") and self.french(i, "tasks") is not None)
+        return {"french": n_fr, "translated": n_tr, "total": len(self.rows)}
+
+    def _guess_import_time(self) -> float | None:
+        """Databases imported before the import time was recorded: the uploaded file's date."""
+        name = (self.report or {}).get("source_file")
+        f = Path(self.db_path).parent / "uploads" / name if name else None
+        return f.stat().st_mtime if f and f.exists() else None
+
+    # ------------------------------------------------------------------ translations
+    def _text(self, i: int, field: str) -> str:
+        if field == "how_to_apply":
+            return self.how_to_apply.get(i, "")
+        return (self.rows[i].get(field) or "").strip()
+
+    def _to_translate(self) -> list[tuple[str, str, str | None, int]]:
+        """(hash, text, source language, field rank) of every distinct non-French text."""
+        seen: dict[str, tuple[str, str, str | None, int]] = {}
+        for rank, field in enumerate(TR_FIELDS):
+            for i, r in sorted(self.rows.items(), key=lambda kv: -(kv[1]["number"] or 0)):
+                if r.get("language") == TR_TARGET:
+                    continue
+                t = self._text(i, field)
+                if t:
+                    h = text_hash(t)
+                    seen.setdefault(h, (h, t, r.get("language"), rank))
+        return list(seen.values())
+
+    def translation_stats(self) -> dict:
+        with self.lock:
+            todo = self._to_translate()
+            done = sum(1 for h, *_ in todo if h in self.tr)
+            foreign = [i for i, r in self.rows.items() if r.get("language") != TR_TARGET]
+            full = sum(1 for i in foreign if all(
+                text_hash(t) in self.tr for t in (self._text(i, f) for f in TR_FIELDS) if t))
+            return {"target": TR_TARGET, "texts": len(todo), "done": done,
+                    "chars": sum(len(t) for _, t, *_ in todo),
+                    "chars_done": sum(len(t) for h, t, *_ in todo if h in self.tr),
+                    "assignments": len(foreign), "assignments_done": full,
+                    "failed": sum(1 for h, *_ in todo if h in self.tr_failed and h not in self.tr),
+                    "by_language": {lang or "?": sum(1 for i in foreign
+                                                     if self.rows[i].get("language") == lang)
+                                    for lang in {self.rows[i].get("language") for i in foreign}}}
+
+    def translation_todo(self, limit: int = 30) -> list[dict]:
+        with self.lock:
+            return [{"hash": h, "text": t, "lang": lang}
+                    for h, t, lang, _ in self._to_translate()
+                    if h not in self.tr and h not in self.tr_failed][:limit]
+
+    def retry_failed_translations(self) -> None:
+        with self.lock:
+            self.tr_failed = set()
+
+    def save_translations(self, items: list[dict]) -> int:
+        """Store translated texts sent by the page; unknown hashes are ignored.
+
+        An item {"hash": …, "failed": true} sets that text aside for this run."""
+        with self.lock:
+            known = {h: lang for h, _t, lang, _ in self._to_translate()}
+            self.tr_failed |= {it["hash"] for it in items
+                               if it.get("failed") and it.get("hash") in known}
+            rows = [(it["hash"], TR_TARGET, it.get("lang") or known[it["hash"]], it["text"])
+                    for it in items
+                    if it.get("hash") in known and isinstance(it.get("text"), str)
+                    and it["text"].strip()]
+            if rows:
+                db = self.connect()
+                try:
+                    db.execute(TRANSLATIONS_SQL)
+                    db.executemany("INSERT OR REPLACE INTO translations VALUES (?,?,?,?)", rows)
+                    db.commit()
+                finally:
+                    db.close()
+                self.tr.update({h: t for h, _tg, _l, t in rows})
+                self.tr_failed -= {h for h, *_ in rows}
+                self._fts_fr_dirty = True
+            return len(rows)
+
+    def clear_translations(self) -> None:
+        with self.lock:
+            db = self.connect()
+            try:
+                db.execute(TRANSLATIONS_SQL)
+                db.execute("DELETE FROM translations WHERE target=?", (TR_TARGET,))
+                db.execute("DROP TABLE IF EXISTS fts_fr")
+                db.commit()
+            finally:
+                db.close()
+            self.tr = {}
+            self._fts_fr_dirty = True
+
+    def french(self, i: int, field: str) -> str | None:
+        """The French text of a field: the original for French assignments, else its
+        translation (None when not translated yet)."""
+        t = self._text(i, field)
+        if not t:
+            return ""
+        if self.rows[i].get("language") == TR_TARGET:
+            return t
+        return self.tr.get(text_hash(t))
+
+    def rebuild_fts_fr(self, force: bool = False) -> None:
+        """Full-text index over the French text (originals + translations).
+
+        Rebuilt lazily: at most every 30 s while a translation job is saving, or at once
+        when the job ends (force)."""
+        with self.lock:
+            if not self.tr or not self._fts_fr_dirty:
+                return
+            if not force and time.time() - self._fts_fr_built < 30:
+                return
+            db = self.connect()
+            try:
+                # the metadata columns (contact, address, details) are the same in both indexes
+                meta = {r[0]: tuple(r[1:]) for r in db.execute(
+                    "SELECT rowid, contact, address, details FROM fts")}
+                db.execute("DROP TABLE IF EXISTS fts_fr")
+                db.execute(fts_schema("fts_fr"))
+                rows = []
+                for i, r in self.rows.items():
+                    fr = {f: self.french(i, f) or "" for f in TR_FIELDS}
+                    rows.append((i, fr["title"], r["employer"], r["place"], fr["tasks"],
+                                 "\n".join(x for x in (fr["required_skills"],
+                                                       fr["desired_skills"]) if x),
+                                 fr["employer_description"], fr["courses"],
+                                 ", ".join(self.task_areas.get(i, [])),
+                                 *meta.get(i, ("", "", ""))))
+                db.executemany(f"INSERT INTO fts_fr(rowid, {', '.join(FTS_COLUMNS)}) "
+                               f"VALUES ({','.join('?' * (len(FTS_COLUMNS) + 1))})", rows)
+                db.commit()
+            finally:
+                db.close()
+            self._fts_fr_dirty, self._fts_fr_built = False, time.time()
+
+    def keyword_ids(self, text: str, search_original: bool = True) -> dict[int, float] | None:
+        """Keyword matches in the French text (once translations exist) and, unless turned
+        off, in the original text too; the better score of the two is kept."""
+        if not self.tr:
+            return self.fts_ids(text)
+        self.rebuild_fts_fr()
+        fr = self.fts_ids(text, "fts_fr")
+        if not search_original or fr is None:
+            return fr
+        orig = self.fts_ids(text) or {}
+        return {i: max(fr.get(i, -1e9), orig.get(i, -1e9)) for i in fr.keys() | orig.keys()}
+
+    def fts_ids(self, text: str, table: str = "fts") -> dict[int, float] | None:
         """id -> bm25 score (higher is better) for the text; None if the text has no terms."""
         pos, neg = fts_query(text)
         if not pos and not neg:
@@ -280,12 +516,12 @@ class Engine:
         try:
             if pos:
                 found = {r[0]: -r[1] for r in db.execute(
-                    "SELECT rowid, bm25(fts, 10.0, 4.0, 3.0, 1.0, 1.0, 0.5, 0.5, 2.0) "
-                    "FROM fts WHERE fts MATCH ?", (pos,))}
+                    f"SELECT rowid, bm25({table}, {', '.join(map(str, FTS_WEIGHTS))}) "
+                    f"FROM {table} WHERE {table} MATCH ?", (pos,))}
             else:
                 found = {i: 0.0 for i in self.rows}
             if neg:
-                for r in db.execute("SELECT rowid FROM fts WHERE fts MATCH ?", (neg,)):
+                for r in db.execute(f"SELECT rowid FROM {table} WHERE {table} MATCH ?", (neg,)):
                     found.pop(r[0], None)
             return found
         except sqlite3.OperationalError:
@@ -296,17 +532,27 @@ class Engine:
         finally:
             db.close()
 
-    def snippets(self, text: str, ids: list[int]) -> dict[int, str]:
+    def snippets(self, text: str, ids: list[int], tables: tuple[str, ...] = ("fts",)
+                 ) -> dict[int, str]:
+        """Highlighted extracts, from the first table (in order) where each id matches."""
         pos, _ = fts_query(text)
         if not pos or not ids:
             return {}
+        out: dict[int, str] = {}
         db = self.connect()
         try:
-            q = (f"SELECT rowid, snippet(fts, -1, '<mark>', '</mark>', '…', 14) FROM fts "
-                 f"WHERE fts MATCH ? AND rowid IN ({','.join('?' * len(ids))})")
-            return {r[0]: r[1] for r in db.execute(q, [pos, *ids])}
-        except sqlite3.OperationalError:
-            return {}
+            for table in tables:
+                rest = [i for i in ids if i not in out]
+                if not rest:
+                    break
+                q = (f"SELECT rowid, snippet({table}, -1, '<mark>', '</mark>', '…', 14) "
+                     f"FROM {table} WHERE {table} MATCH ? "
+                     f"AND rowid IN ({','.join('?' * len(rest))})")
+                try:
+                    out.update({r[0]: r[1] for r in db.execute(q, [pos, *rest])})
+                except sqlite3.OperationalError:
+                    continue
+            return out
         finally:
             db.close()
 
@@ -433,21 +679,25 @@ class Engine:
     def _search(self, q: dict) -> dict[str, Any]:
         warnings: list[str] = []
         ids = list(self.rows)
-        text = (q.get("text") or "").strip()
+        text = phone_query((q.get("text") or "").strip())
         mode = q.get("text_mode") or "keyword"
+        view_fr = q.get("view_lang") == TR_TARGET and bool(self.tr)
+        search_original = q.get("search_original", True) is not False
 
         # --- relevance
         kw: dict[int, float] | None = None
         sem: dict[int, float] | None = None
         if text and mode in ("keyword", "hybrid"):
-            kw = self.fts_ids(text)
+            kw = self.keyword_ids(text, search_original)
         if text and mode in ("semantic", "hybrid"):
             if not self.ai.configured:
                 warnings.append("La recherche IA n'est pas configurée : ajoutez un jeton dans "
-                                "Réglages IA. Recherche par mots-clés utilisée à la place.")
+                                "Base de données → Recherche IA. Recherche par mots-clés "
+                                "utilisée à la place.")
             elif not self.semantic.ready:
-                warnings.append("L'index IA n'est pas encore construit : cliquez sur « Construire "
-                                "l'index IA ». Recherche par mots-clés utilisée à la place.")
+                warnings.append("L'index IA n'est pas encore construit : Base de données → "
+                                "Recherche IA → « Construire l'index ». Recherche par mots-clés "
+                                "utilisée à la place.")
             else:
                 try:
                     sem = self.semantic.scores(text, self.ai)
@@ -455,7 +705,7 @@ class Engine:
                     warnings.append(f"La recherche IA a échoué ({exc}) ; recherche par mots-clés "
                                     "utilisée à la place.")
             if sem is None and kw is None:
-                kw = self.fts_ids(text)
+                kw = self.keyword_ids(text, search_original)
 
         score: dict[int, float] = {}
         text_ok: Callable[[int], bool] = lambda i: True
@@ -544,7 +794,10 @@ class Engine:
         offset = int(q.get("offset") or 0)
         limit = min(int(q.get("limit") or 50), 500)
         page = order[offset:offset + limit]
-        snips = self.snippets(text, page) if text and kw is not None else {}
+        tables = (("fts_fr", "fts") if search_original else ("fts_fr",)) if self.tr else ("fts",)
+        if not view_fr and self.tr and search_original:
+            tables = ("fts", "fts_fr")
+        snips = self.snippets(text, page, tables) if text and kw is not None else {}
         items = []
         for i in page:
             r = self.rows[i]
@@ -556,6 +809,10 @@ class Engine:
             item["score"] = round(score[i], 4) if i in score else None
             item["distance_km"] = round(dist[i], 1) if dist.get(i) is not None else None
             item["snippet"] = snips.get(i)
+            if view_fr:
+                fr_title = self.french(i, "title")
+                if fr_title and fr_title != r["title"]:
+                    item["title_orig"], item["title"] = r["title"], fr_title
             item["locations"] = [{"lat": l["lat"], "lon": l["lon"], "label": l["label"]}
                                  for l in self.locations.get(i, []) if l["lat"] is not None]
             items.append(item)
@@ -565,7 +822,8 @@ class Engine:
             r = self.rows[i]
             for l in self.locations.get(i, []):
                 if l["lat"] is not None:
-                    points.append([i, round(l["lat"], 5), round(l["lon"], 5), r["title"],
+                    title = (self.french(i, "title") or r["title"]) if view_fr else r["title"]
+                    points.append([i, round(l["lat"], 5), round(l["lon"], 5), title,
                                    r["employer"], l["label"] or r["place"],
                                    sector_code(r.get("sector")), i in self.favorites])
         unlocated = sum(1 for i in matched
@@ -589,6 +847,10 @@ class Engine:
             out["rare"] = self.rare.get(i, [])
             out["weeks"] = self.weeks.get(i, ([], []))[0]
             out["locations"] = self.locations.get(i, [])
+            # French translations available for this assignment, by field
+            out["tr"] = {} if out.get("language") == TR_TARGET else {
+                f: t for f in TR_FIELDS
+                if (out.get(f) or "").strip() and (t := self.tr.get(text_hash(out[f])))}
             return out
         finally:
             db.close()
@@ -602,5 +864,9 @@ class Engine:
                 "last_week": max(all_weeks) if all_weeks else None,
                 "report": self.report, "ai": self.ai.public(),
                 "favorites": len(self.favorites & set(self.rows)),
+                "db_path": self.db_path,
+                "db_size": Path(self.db_path).stat().st_size if Path(self.db_path).exists() else 0,
+                "imported_at": self.imported_at,
+                "translations": len(self.tr),
                 "ai_index": {"ready": self.semantic.ready, "vectors": len(self.semantic.ids),
                              "model": self.semantic.model, **self.semantic.progress}}

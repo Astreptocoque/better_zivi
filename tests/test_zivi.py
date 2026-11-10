@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import numpy as np
+import pytest
 from fastapi.testclient import TestClient
 
 from zivi.api import create_app
@@ -335,3 +336,213 @@ def test_filter_by_rare_traits(store):
                                 {"field": "abroad", "value": "Oui"}]})
     assert {it["id"] for it in both["items"]} <= {it["id"] for it in res["items"]}
     assert e.search({"traits": [{"field": "night", "value": "jamais"}]})["total"] == 0
+
+
+def test_ai_index_build_survives_timeouts(store, monkeypatch):
+    """Batches that time out are retried, split, and a text that always fails is skipped."""
+    db, _ = store
+    e = Engine(db)
+    import zivi.semantic as sem
+    calls = []
+
+    def flaky_embed(self, texts):
+        calls.append(len(texts))
+        if len(texts) > 2:
+            raise sem.BatchFailed("pas de réponse du service (ReadTimeout)")
+        if any("alpages" in t.lower() for t in texts):  # one record is "too long"
+            raise sem.BatchFailed("Erreur de l'API d'embeddings 400 : input too long")
+        return np.ones((len(texts), 3), dtype=np.float32) / np.sqrt(3)
+
+    monkeypatch.setattr(sem.Embedder, "embed", flaky_embed)
+    e.ai.base_url, e.ai.model, e.ai.api_key = "http://localhost:11434/v1", "nomic", ""
+    e.semantic.build(str(db), e.ai_texts(), e.ai, pause=0)
+    p = e.semantic.progress
+    assert p["error"] is None and not p["running"]
+    assert p["skipped"] == 1 and p["done"] == 4 and p["batch"] == 1
+    assert e.semantic.ready and len(e.semantic.ids) == 4
+    assert calls[0] == 5  # started with the whole set, then smaller batches
+
+    # a stopped build keeps what it already did, and the next build only does the rest
+    monkeypatch.setattr(sem.Embedder, "embed",
+                        lambda self, t: np.ones((len(t), 3), dtype=np.float32))
+    e.semantic.build(str(db), e.ai_texts(), e.ai, pause=0)
+    assert e.semantic.progress["total"] == 1 and len(e.semantic.ids) == 5
+
+
+def test_translation_roundtrip(store):
+    db, _ = store
+    client = TestClient(create_app(db))
+    stats = client.get("/api/translate").json()
+    assert stats["done"] == 0 and stats["texts"] > 0
+    todo = client.get("/api/translate/todo", params={"limit": 500}).json()["items"]
+    assert len(todo) == stats["texts"]
+    # the page would use the browser translator; here every text gets a recognisable word
+    items = [{"hash": t["hash"], "text": f"FR zébrure {t['text']}"} for t in todo]
+    items.append({"hash": "unknown", "text": "ignored"})
+    assert client.post("/api/translate/save", json={"items": items}).json()["saved"] == len(todo)
+    stats = client.post("/api/translate/finish").json()
+    assert stats["done"] == stats["texts"] and stats["assignments_done"] == stats["assignments"]
+    assert client.get("/api/translate/todo").json()["items"] == []
+
+    found = client.post("/api/search", json={"text": "zebrure"}).json()  # accents ignored
+    assert found["total"] == stats["assignments"]
+    fr_view = client.post("/api/search", json={"view_lang": "fr", "limit": 50}).json()
+    translated = [it for it in fr_view["items"] if it.get("title_orig")]
+    assert translated and all(it["title"].startswith("FR ") for it in translated)
+    assert any(p[3].startswith("FR ") for p in fr_view["points"])
+    d = client.get(f"/api/assignment/{translated[0]['id']}").json()
+    assert d["tr"]["title"].startswith("FR ")
+
+    # a word only in the original text: found by default, not when the original is excluded
+    word = translated[0]["title_orig"].split()[0]
+    with_orig = client.post("/api/search", json={"text": f'"{word}"'}).json()["total"]
+    fr_only = client.post("/api/search", json={"text": f'"{word}"',
+                                               "search_original": False}).json()["total"]
+    assert with_orig >= 1 and fr_only <= with_orig
+
+    # the translations survive a new engine (restart) and can be deleted
+    assert Engine(db).translation_stats()["done"] == stats["texts"]
+    assert client.delete("/api/translate").json()["done"] == 0
+
+
+def test_translation_failures_are_set_aside_then_retried(store):
+    db, _ = store
+    client = TestClient(create_app(db))
+    todo = client.get("/api/translate/todo", params={"limit": 500}).json()["items"]
+    bad, good = todo[0], todo[1:]
+    client.post("/api/translate/save", json={"items": [{"hash": bad["hash"], "failed": True}] +
+                                         [{"hash": t["hash"], "text": "ok"} for t in good]})
+    # nothing left to hand out in this run, the failure is counted
+    assert client.get("/api/translate/todo").json()["items"] == []
+    assert client.get("/api/translate").json()["failed"] == 1
+    # a new run tries it again, and a success clears it
+    assert client.post("/api/translate/retry").json()["failed"] == 0
+    assert [t["hash"] for t in client.get("/api/translate/todo").json()["items"]] == [bad["hash"]]
+    client.post("/api/translate/save", json={"items": [{"hash": bad["hash"], "text": "ok"}]})
+    st = client.get("/api/translate").json()
+    assert st["done"] == st["texts"] and st["failed"] == 0
+
+
+# ---------------------------------------------------------------- Ollama
+
+class FakeResponse:
+    def __init__(self, status, payload):
+        self.status_code, self._payload = status, payload
+        self.text = str(payload)
+
+    def json(self):
+        return self._payload
+
+
+def test_ollama_translate_keeps_lines(monkeypatch):
+    import zivi.ollama as ol
+    prompts = []
+
+    def fake_post(url, json=None, **kw):
+        prompts.append(json["prompt"])
+        text = json["prompt"].split("\n\n\n", 1)[1]
+        if "3 lines" in json["prompt"]:  # the model merges the lines: per-line fallback
+            return FakeResponse(200, {"response": "tout sur une ligne"})
+        return FakeResponse(200, {"response": "\n".join("FR " + ln for ln in text.split("\n"))})
+
+    monkeypatch.setattr(ol.httpx, "post", fake_post)
+    assert ol.translate("h", "m", "Alp-Pflege", "de") == "FR Alp-Pflege"
+    assert "German (de) to French (fr)" in prompts[-1]
+    out = ol.translate("h", "m", "Eins\n\nZwei\nDrei", "de")
+    assert out == "FR Eins\n\nFR Zwei\nFR Drei"  # blank line kept, one call per line after merge
+    assert ol.translate("h", "m", "Ciao\nMondo", "it") == "FR Ciao\nFR Mondo"
+    assert "Italian (it)" in prompts[-1] and "2 lines" in prompts[-1]
+
+    monkeypatch.setattr(ol.httpx, "post", lambda *a, **k: FakeResponse(404, {"error": "model"}))
+    with pytest.raises(RuntimeError, match="pas installé"):
+        ol.translate("h", "absent", "Hallo", "de")
+
+
+def test_ollama_translation_job(store, monkeypatch):
+    db, _ = store
+    import zivi.ollama as ol
+    e = Engine(db)
+    always_fails = e.translation_todo(1)[0]["text"]
+
+    def fake_translate(host, model, text, source, timeout=600.0):
+        if text == always_fails:  # this one always times out
+            raise ol.TranslateFailed("pas de réponse d'Ollama (ReadTimeout)")
+        return "FR " + text
+
+    monkeypatch.setattr(ol, "translate", fake_translate)
+    job = ol.TranslationJob()
+    job.run("h", "translategemma:4b", e.translation_todo, e.save_translations,
+            e.rebuild_fts_fr, pause=0)
+    p = job.progress
+    st = e.translation_stats()
+    assert p["error"] is None and not p["running"] and p["skipped"] >= 1
+    assert st["done"] == st["texts"] - st["failed"] and st["failed"] == p["skipped"]
+    assert p["done"] == st["done"]
+
+
+def test_ollama_status_and_host():
+    from zivi.ollama import Ollama, host_from, same_model
+    assert host_from("http://localhost:11434/v1") == "http://127.0.0.1:11434"
+    assert same_model("nomic-embed-text", "nomic-embed-text:latest")
+    st = Ollama().status("http://127.0.0.1:9")  # nothing listens there
+    assert st["running"] is False and st["models"] == [] and st["download_url"]
+
+
+def test_ai_index_on_french_text(store, monkeypatch):
+    db, _ = store
+    import zivi.semantic as sem
+    monkeypatch.setattr(sem.Embedder, "embed",
+                        lambda self, t: np.ones((len(t), 3), dtype=np.float32))
+    client = TestClient(create_app(db))
+    client.post("/api/ai/config", json={"base_url": "http://localhost:11434/v1",
+                                        "model": "nomic"})
+    e = Engine(db)
+    e.semantic.build(str(db), e.ai_texts(), e.ai, pause=0)
+    assert client.get("/api/ai").json()["pending"] == 0
+
+    # translate everything, then switch the index to French: only the translated ones change
+    todo = client.get("/api/translate/todo", params={"limit": 500}).json()["items"]
+    client.post("/api/translate/save", json={"items": [
+        {"hash": t["hash"], "text": f"FR {t['text']}"} for t in todo]})
+    info = client.get("/api/ai").json()
+    assert info["pending"] == 0 and info["french"] is False  # option off: nothing changes
+    client.post("/api/ai/config", json={"french": True})
+    info = client.get("/api/ai").json()
+    cov = info["coverage"]
+    assert info["french"] is True and cov["translated"] + cov["french"] == cov["total"]
+    assert info["pending"] == cov["translated"]  # the French-language ones keep their vectors
+
+    e2 = Engine(db)  # the option is saved, and the AI text is now the French one
+    assert e2.ai_french is True
+    assert all(t.startswith("FR ") for i, t in e2.ai_texts().items()
+               if e2.rows[i].get("language") != "fr")
+
+
+def test_keyword_search_covers_metadata(store):
+    db, _ = store
+    import sqlite3
+    con = sqlite3.connect(db)
+    a = con.execute("SELECT id, number, contact_name, contact_email FROM assignments "
+                    "WHERE contact_name IS NOT NULL LIMIT 1").fetchone()
+    con.execute("UPDATE assignments SET contact_phone='079 123 45 67' WHERE id=?", (a[0],))
+    # an old database: keyword index without the metadata columns
+    con.execute("DROP TABLE fts")
+    con.execute("CREATE VIRTUAL TABLE fts USING fts5(title, employer, place, tasks, skills, "
+                "employer_description, courses, task_areas)")
+    con.commit()
+    con.close()
+    e = Engine(db)  # upgrades the index in place
+    ids_of = lambda q: [it["id"] for it in e.search({"text": q})["items"]]  # noqa: E731
+    last_name = a[2].split()[-1]
+    assert a[0] in ids_of(last_name)
+    assert a[0] in ids_of("0791234567") and a[0] in ids_of('"079 123 45 67"')
+    from zivi.converter import fts_metadata
+    assert "0419806183" in fts_metadata({"contact_phone": "+41 41 980 61 83"}, [])[2]
+    from zivi.search import phone_query
+    for typed in ("041 980 61 83", "+41 41 980 61 83", '"0041 41 980 61 83"', "041/980.61.83"):
+        assert phone_query(typed) == "0419806183"
+    assert phone_query("alpage 2026") == "alpage 2026" and phone_query("18470") == "18470"
+    assert ids_of(str(a[1])) == [a[0]]
+    # words from a description field and from the metadata combine
+    title_word = e.rows[a[0]]["title"].split()[0]
+    assert a[0] in ids_of(f"{title_word} {last_name}")

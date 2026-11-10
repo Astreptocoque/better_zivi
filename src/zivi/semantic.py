@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 import threading
+import time
 from dataclasses import dataclass, field
 
 import httpx
@@ -30,9 +31,12 @@ class AISettings:
     api_key: str = field(default=config.AI_API_KEY, repr=False)
 
     @property
+    def local(self) -> bool:
+        return "localhost" in self.base_url or "127.0.0.1" in self.base_url
+
+    @property
     def configured(self) -> bool:
-        local = "localhost" in self.base_url or "127.0.0.1" in self.base_url
-        return bool(self.base_url and self.model and (self.api_key or local))
+        return bool(self.base_url and self.model and (self.api_key or self.local))
 
     def public(self) -> dict:
         key = self.api_key
@@ -47,18 +51,32 @@ def assignment_text(row: dict, task_areas: list[str]) -> str:
     return "\n".join(p for p in parts if p)[:MAX_CHARS]
 
 
+class BatchFailed(RuntimeError):
+    """A batch that may succeed when smaller or later: timeout, overload, input too long."""
+
+
 class Embedder:
-    def __init__(self, settings: AISettings):
+    def __init__(self, settings: AISettings, timeout: float | None = None):
         self.s = settings
+        # a local model on the CPU can take minutes for one batch; a cloud API answers fast
+        self.timeout = timeout or (600.0 if settings.local else 120.0)
 
     def embed(self, texts: list[str]) -> np.ndarray:
         headers = {"Content-Type": "application/json"}
         if self.s.api_key:
             headers["Authorization"] = f"Bearer {self.s.api_key}"
-        url = self.s.base_url.rstrip("/") + "/embeddings"
-        r = httpx.post(url, headers=headers, timeout=120,
-                       json={"model": self.s.model, "input": texts})
-        if r.status_code >= 400:
+        # localhost -> 127.0.0.1: avoids a ~2 s IPv6 detour per request on Windows
+        url = self.s.base_url.rstrip("/").replace("://localhost", "://127.0.0.1") + "/embeddings"
+        try:
+            r = httpx.post(url, headers=headers,
+                           timeout=httpx.Timeout(self.timeout, connect=15.0),
+                           json={"model": self.s.model, "input": texts})
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            raise BatchFailed(f"pas de réponse du service ({type(exc).__name__})") from exc
+        if r.status_code in (400, 413, 429) or r.status_code >= 500:
+            # overloaded, rate-limited, or a text too long for the model's context
+            raise BatchFailed(f"Erreur de l'API d'embeddings {r.status_code} : {r.text[:300]}")
+        if r.status_code >= 400:  # wrong token, unknown model…: retrying won't help
             raise RuntimeError(f"Erreur de l'API d'embeddings {r.status_code} : {r.text[:300]}")
         data = sorted(r.json()["data"], key=lambda d: d.get("index", 0))
         vecs = np.array([d["embedding"] for d in data], dtype=np.float32)
@@ -74,6 +92,7 @@ class SemanticIndex:
         self.ids: np.ndarray = np.zeros(0, dtype=np.int64)
         self.mat: np.ndarray = np.zeros((0, 0), dtype=np.float32)
         self.progress = {"running": False, "done": 0, "total": 0, "error": None}
+        self.cancel = False
         self._lock = threading.Lock()
 
     @property
@@ -94,10 +113,35 @@ class SemanticIndex:
                 self.ids = np.zeros(0, dtype=np.int64)
                 self.mat = np.zeros((0, 0), dtype=np.float32)
 
+    def pending(self, db: sqlite3.Connection, texts: dict[int, str], model: str) -> int:
+        """How many assignments the next build would (re)compute for this model."""
+        db.execute(EMBEDDINGS_SQL)
+        have = {r[0]: r[1] for r in db.execute(
+            "SELECT assignment_id, text_hash FROM embeddings WHERE model=?", (model,))}
+        return sum(1 for aid, t in texts.items()
+                   if have.get(aid) != hashlib.sha1(t.encode()).hexdigest())
+
+    def clear(self, db: sqlite3.Connection, model: str) -> None:
+        """Delete the vectors of one model (the next build starts from scratch)."""
+        db.execute(EMBEDDINGS_SQL)
+        db.execute("DELETE FROM embeddings WHERE model=?", (model,))
+        db.commit()
+        self.load(db, model)
+
     def build(self, db_path: str, texts: dict[int, str], settings: AISettings,
-              batch: int = 64) -> None:
-        """Embed every assignment whose text changed since the last build (runs in a thread)."""
-        self.progress = {"running": True, "done": 0, "total": 0, "error": None}
+              batch: int | None = None, retries: int = 3, pause: float = 3.0) -> None:
+        """Embed every assignment whose text changed since the last build (runs in a thread).
+
+        Each batch is saved as soon as it is done, so a stopped or failed build resumes
+        where it left off. A batch that times out is retried after a pause, then split in
+        two; a single text that still fails is skipped (counted in progress["skipped"])
+        instead of stopping everything.
+        """
+        size = batch or (8 if settings.local else 64)
+        self.cancel = False
+        self.progress = {"running": True, "done": 0, "total": 0, "error": None,
+                         "skipped": 0, "batch": size, "cancelled": False, "note": None}
+        db = None
         try:
             db = sqlite3.connect(db_path)
             db.execute(EMBEDDINGS_SQL)
@@ -111,20 +155,47 @@ class SemanticIndex:
                     todo.append((aid, text, h))
             self.progress["total"] = len(todo)
             emb = Embedder(settings)
-            for i in range(0, len(todo), batch):
-                chunk = todo[i:i + batch]
-                vecs = np.asarray(emb.embed([t for _, t, _ in chunk]), dtype=np.float32)
+            i = 0
+            while i < len(todo):
+                if self.cancel:
+                    self.progress["cancelled"] = True
+                    break
+                chunk = todo[i:i + size]
+                vecs = None
+                for attempt in range(retries):
+                    try:
+                        vecs = np.asarray(emb.embed([t for _, t, _ in chunk]), dtype=np.float32)
+                        self.progress["note"] = None
+                        break
+                    except BatchFailed as exc:
+                        self.progress["note"] = f"nouvel essai {attempt + 1}/{retries - 1} : {exc}"
+                        if attempt < retries - 1 and not self.cancel:
+                            time.sleep(pause * (attempt + 1))
+                if vecs is None:
+                    if self.cancel:
+                        continue
+                    if size > 1:  # smaller batches finish within the timeout
+                        size = max(1, size // 2)
+                        self.progress["batch"] = size
+                        continue
+                    self.progress["skipped"] += 1  # this one text keeps failing: move on
+                    i += 1
+                    continue
                 vecs = vecs / np.maximum(np.linalg.norm(vecs, axis=1, keepdims=True), 1e-12)
                 db.executemany("INSERT OR REPLACE INTO embeddings VALUES (?,?,?,?)",
                                [(aid, settings.model, h, v.tobytes())
                                 for (aid, _, h), v in zip(chunk, vecs)])
                 db.commit()
-                self.progress["done"] = i + len(chunk)
-            self.load(db, settings.model)
-            db.close()
+                i += len(chunk)
+                self.progress["done"] = i - self.progress["skipped"]
         except Exception as exc:  # reported to the UI
             self.progress["error"] = str(exc)
         finally:
+            if db is not None:
+                try:  # use what is already done, even after a stop or an error
+                    self.load(db, settings.model)
+                finally:
+                    db.close()
             self.progress["running"] = False
 
     def scores(self, query: str, settings: AISettings) -> dict[int, float]:

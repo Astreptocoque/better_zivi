@@ -16,6 +16,7 @@ import json
 import re
 import shutil
 import sqlite3
+import time
 from collections import Counter
 from collections.abc import Callable, Iterable
 from datetime import date, timedelta
@@ -44,14 +45,74 @@ CREATE TABLE task_areas(assignment_id INTEGER, code TEXT, label TEXT);
 CREATE TABLE weeks(assignment_id INTEGER, week TEXT);
 CREATE TABLE locations(assignment_id INTEGER, label TEXT, street TEXT, plz TEXT, city TEXT,
                        country TEXT, lat REAL, lon REAL, canton TEXT, source TEXT);
-CREATE VIRTUAL TABLE fts USING fts5(
-    title, employer, place, tasks, skills, employer_description, courses, task_areas,
-    tokenize = 'unicode61 remove_diacritics 2'
-);
 CREATE INDEX ix_ta ON task_areas(assignment_id);
 CREATE INDEX ix_weeks ON weeks(assignment_id);
 CREATE INDEX ix_loc ON locations(assignment_id);
 """
+
+# Keyword index: the description texts, then the "metadata" (contact person, addresses,
+# number, sector…) so a search can mix both, e.g. 'alpage dupont'.
+FTS_COLUMNS = ("title", "employer", "place", "tasks", "skills", "employer_description",
+               "courses", "task_areas", "contact", "address", "details")
+# bm25 weight of each column, same order: a match in the title counts most
+FTS_WEIGHTS = (10.0, 4.0, 3.0, 1.0, 1.0, 0.5, 0.5, 2.0, 2.0, 1.0, 1.0)
+FTS_VERSION = "3"  # bump when the index content changes: existing databases rebuild it
+
+
+def fts_schema(table: str = "fts") -> str:
+    return (f"CREATE VIRTUAL TABLE {table} USING fts5({', '.join(FTS_COLUMNS)}, "
+            "tokenize = 'unicode61 remove_diacritics 2')")
+
+
+def fts_metadata(a: dict, locations: list[dict]) -> tuple[str, str, str]:
+    """(contact, address, details) columns of one assignment for the keyword index."""
+    phone = a.get("contact_phone") or ""
+    contact = "\n".join(x for x in (a.get("contact_name"), a.get("contact_role"),
+                                     a.get("contact_email"), phone,
+                                     a.get("how_to_apply")) if x)
+    address = "\n".join(dict.fromkeys(x for x in [a.get("employer_address")] + [
+        " ".join(str(v) for v in (loc.get("label"), loc.get("street"), loc.get("plz"),
+                                  loc.get("city")) if v) for loc in locations] if x))
+    compact = re.sub(r"\D", "", phone)  # '079 123 45 67' also found as '0791234567'
+    if compact.startswith("41") and len(compact) == 11:  # +41 41 980… also as 041 980…
+        compact += f" 0{compact[2:]}"
+    elif compact.startswith("0041"):
+        compact += f" 0{compact[4:]}"
+    details = " ".join(str(x) for x in (a.get("number"), a.get("sector"), a.get("work_model"),
+                                        (a.get("canton") or "").replace(",", " "), compact)
+                       if x)
+    return contact, address, details
+
+
+def build_fts(db: sqlite3.Connection, table: str = "fts") -> int:
+    """(Re)build the keyword index from the assignments, task types and locations."""
+    db.row_factory = sqlite3.Row
+    try:
+        tas: dict[int, list[str]] = {}
+        for r in db.execute("SELECT assignment_id, label, code FROM task_areas"):
+            tas.setdefault(r[0], []).append(r[1] or r[2])
+        locs: dict[int, list[dict]] = {}
+        for r in db.execute("SELECT * FROM locations"):
+            locs.setdefault(r["assignment_id"], []).append(dict(r))
+        rows = []
+        for a in db.execute("SELECT * FROM assignments"):
+            a = dict(a)
+            rows.append((a["id"], a["title"], a["employer"], a["place"], a["tasks"],
+                         "\n".join(x for x in (a["required_skills"], a["desired_skills"]) if x),
+                         a["employer_description"], a["courses"],
+                         ", ".join(tas.get(a["id"], [])),
+                         *fts_metadata(a, locs.get(a["id"], []))))
+    finally:
+        db.row_factory = None
+    db.execute(f"DROP TABLE IF EXISTS {table}")
+    db.execute(fts_schema(table))
+    db.executemany(f"INSERT INTO {table}(rowid, {', '.join(FTS_COLUMNS)}) "
+                   f"VALUES ({','.join('?' * (len(FTS_COLUMNS) + 1))})", rows)
+    if table == "fts":
+        db.execute("INSERT OR REPLACE INTO meta VALUES ('fts_version', ?)", (FTS_VERSION,))
+    db.commit()
+    return len(rows)
+
 
 GEOCACHE_SQL = """CREATE TABLE IF NOT EXISTS geocache(
     key TEXT PRIMARY KEY, lat REAL, lon REAL, canton TEXT, source TEXT)"""
@@ -59,6 +120,12 @@ GEOCACHE_SQL = """CREATE TABLE IF NOT EXISTS geocache(
 EMBEDDINGS_SQL = """CREATE TABLE IF NOT EXISTS embeddings(
     assignment_id INTEGER, model TEXT, text_hash TEXT, vec BLOB,
     PRIMARY KEY(assignment_id, model))"""
+
+# Translations of the assignment texts, keyed on a hash of the original text: a re-import
+# keeps them, and a text repeated in many assignments (employer description) is stored once.
+TRANSLATIONS_SQL = """CREATE TABLE IF NOT EXISTS translations(
+    src_hash TEXT, target TEXT, source_lang TEXT, text TEXT,
+    PRIMARY KEY(src_hash, target))"""
 
 # --------------------------------------------------------------------------- helpers
 
@@ -411,12 +478,13 @@ def convert(json_path: str | Path, db_path: str | Path, *, geocoder_factory=None
         tmp.unlink()
     db = sqlite3.connect(tmp)
     db.executescript(SCHEMA)
-    # keep the geocoding cache and AI embeddings from a previous import
+    # keep the geocoding cache, AI embeddings and translations from a previous import
     if db_path.exists():
         db.execute("ATTACH DATABASE ? AS old", (str(db_path),))
         old_tables = {r[0] for r in db.execute(
             "SELECT name FROM old.sqlite_master WHERE type='table'")}
-        for table, ddl in (("geocache", GEOCACHE_SQL), ("embeddings", EMBEDDINGS_SQL)):
+        for table, ddl in (("geocache", GEOCACHE_SQL), ("embeddings", EMBEDDINGS_SQL),
+                           ("translations", TRANSLATIONS_SQL)):
             if table in old_tables:
                 db.execute(ddl)
                 db.execute(f"INSERT OR REPLACE INTO {table} SELECT * FROM old.{table}")
@@ -494,17 +562,8 @@ def convert(json_path: str | Path, db_path: str | Path, *, geocoder_factory=None
 
     # ---- full-text index
     say("Construction de l'index plein texte", 0.92)
-    ta_map: dict[int, list[str]] = {}
-    for n in normalised:
-        ta_map[n["row"]["id"]] = [l or c for c, l in n["task_areas"]]
-    db.executemany(
-        "INSERT INTO fts(rowid, title, employer, place, tasks, skills, employer_description, "
-        "courses, task_areas) VALUES (?,?,?,?,?,?,?,?,?)",
-        [(n["row"]["id"], n["row"]["title"], n["row"]["employer"], n["row"]["place"],
-          n["row"]["tasks"],
-          "\n".join(x for x in (n["row"]["required_skills"], n["row"]["desired_skills"]) if x),
-          n["row"]["employer_description"], n["row"]["courses"],
-          ", ".join(ta_map[n["row"]["id"]])) for n in normalised])
+    db.commit()
+    build_fts(db)
 
     report = {
         "source_file": json_path.name,
@@ -520,7 +579,8 @@ def convert(json_path: str | Path, db_path: str | Path, *, geocoder_factory=None
     }
     db.executemany("INSERT INTO meta VALUES (?,?)",
                    [("report", json.dumps(report, ensure_ascii=False)),
-                    ("imported_from", str(json_path))])
+                    ("imported_from", str(json_path)),
+                    ("imported_at", str(time.time()))])
     db.commit()
     db.close()
     # replace the old database atomically (embeddings are rebuilt on demand)
