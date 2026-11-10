@@ -48,19 +48,16 @@ uv run zivi search "alpage" --near Lausanne --radius 40 --housing
 
 ## Getting the data
 
-The assignments come from [ZiviConnect](https://ziviconnect.admin.ch), the Swiss civilian
-service platform, and are only visible to people logged in there. **The full export is not
-included in this repository**, for obvious reasons: the data belongs to the platform, it
-needs a ZiviConnect account, and it contains the names, phone numbers and e-mails of the
-contact persons at each establishment.
+The assignments come from [ZiviConnect](https://ziviconnect.admin.ch) and are only visible
+to people logged in there, so **the data is not included in this repository**: it belongs to
+the platform, needs an account, and contains the contact persons' names, phones and e-mails.
 
 The app works from a JSON export of the assignments, in the same format as
 `example/zivi_database_example.json`. Load it with **Base de données → Charger un export
 JSON…**, or from the terminal with `uv run zivi import <file>.json`.
 
-`example/zivi_database_example.json` holds 5 real assignments (2 in German, 2 in French,
-1 in Italian) in the same format, so you can try every feature without an account. Their
-contact persons, e-mails and phone numbers are fictional.
+To try the app without an account, load `example/zivi_database_example.json`: 5 real
+assignments (2 in German, 2 in French, 1 in Italian) with fictional contact persons.
 
 ## Languages
 
