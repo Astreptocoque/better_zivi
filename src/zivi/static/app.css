@@ -51,13 +51,21 @@ h3 { font-size: 1rem; margin: 0 0 .5rem; display: flex; align-items: center; jus
 .brand svg { width: 26px; height: 26px; }
 .brand rect { fill: var(--red); }
 .brand path { fill: #fff; }
-.search { flex: 1; display: flex; gap: .5rem; min-width: 0; }
-.q-wrap { position: relative; flex: 1; min-width: 0; display: flex; }
-.search input[type=search] {
-  flex: 1; min-width: 0; padding: .65rem 2.8rem .65rem .9rem; font-size: 1.05rem;
-  border: 2px solid var(--line); border-radius: var(--radius); background: var(--mist);
+/* One control: the field, ▾ advanced search and the search mode share a single frame,
+   so it reads as "type here, searched this way". */
+.search {
+  flex: 1; display: flex; align-items: stretch; min-width: 0;
+  border: 2px solid var(--line); border-radius: 14px; background: var(--mist);
+  transition: border-color .15s, background .15s, box-shadow .15s;
 }
-.search input[type=search]:focus { border-color: var(--spruce); background: var(--panel); outline: none; }
+.search:focus-within { border-color: var(--spruce); background: var(--panel); box-shadow: 0 0 0 4px color-mix(in srgb, var(--spruce) 14%, transparent); }
+.q-wrap { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; }
+.q-icon { position: absolute; left: .85rem; width: 17px; height: 17px; color: var(--slate); pointer-events: none; }
+.search input[type=search] {
+  flex: 1; min-width: 0; padding: .62rem 2.8rem .62rem 2.5rem; font-size: 1.05rem;
+  border: 0; border-radius: 12px; background: transparent;
+}
+.search input[type=search]:focus { outline: none; }
 .adv-toggle {
   position: absolute; right: .35rem; top: 50%; transform: translateY(-50%);
   width: 2rem; height: 2rem; display: grid; place-items: center; padding: 0;
@@ -106,12 +114,14 @@ h3 { font-size: 1rem; margin: 0 0 .5rem; display: flex; align-items: center; jus
   .results-head { flex-wrap: wrap; }
   .results-head #count { flex-basis: 100%; } /* the count on its own line, button and sort menu below */
 }
-.seg { display: flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+/* search mode, inside the search frame after a divider: small pills */
+.seg { display: flex; align-items: center; gap: 2px; padding: 4px; border-left: 1px solid var(--line); flex-shrink: 0; }
 .seg label { position: relative; display: flex; }
 .seg input { position: absolute; opacity: 0; pointer-events: none; }
-.seg span { padding: .55rem .8rem; cursor: pointer; color: var(--slate); }
-.seg input:checked + span { background: var(--spruce); color: var(--panel); }
-.seg input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: -2px; }
+.seg span { padding: .42rem .75rem; border-radius: 9px; cursor: pointer; color: var(--slate); font-size: .92rem; white-space: nowrap; transition: background .12s, color .12s; }
+.seg span:hover { background: var(--line); color: var(--ink); }
+.seg input:checked + span { background: var(--spruce); color: var(--panel); font-weight: 700; }
+.seg input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 1px; }
 .actions { display: flex; gap: .4rem; }
 .btn {
   text-decoration: none; color: var(--ink);
@@ -465,8 +475,9 @@ dialog.panel::backdrop { background: rgba(10, 20, 15, .38); backdrop-filter: blu
   .bar { flex-wrap: wrap; }
   .search { order: 3; flex-basis: 100%; flex-wrap: wrap; }
   .q-wrap { flex-basis: 100%; }
-  .seg { flex: 1; }
+  .seg { flex: 1; border-left: 0; border-top: 1px solid var(--line); }
   .seg label { flex: 1; justify-content: center; }
+  .seg span { flex: 1; text-align: center; }
   .actions { margin-left: auto; }
   .tabs { display: flex; background: var(--panel); border-bottom: 1px solid var(--line); }
   .tabs button { flex: 1; border: 0; background: none; padding: .6rem; cursor: pointer; border-bottom: 3px solid transparent; }
