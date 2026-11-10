@@ -1,4 +1,4 @@
-# Zivi search
+# Better Zivi
 
 A local search engine and map for ZiviConnect civil-service assignments
 (*cahiers des charges*). Load the JSON export, then filter by every attribute, search the

@@ -19,4 +19,4 @@ AI_BASE_URL = os.environ.get("ZIVI_AI_BASE_URL", "https://api.openai.com/v1")
 AI_MODEL = os.environ.get("ZIVI_AI_MODEL", "text-embedding-3-small")
 AI_API_KEY = os.environ.get("ZIVI_AI_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
 
-USER_AGENT = "zivi-search/0.1 (personal search tool)"
+USER_AGENT = "better-zivi/0.1 (personal search tool)"

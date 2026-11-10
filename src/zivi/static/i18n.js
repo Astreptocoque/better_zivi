@@ -1,4 +1,4 @@
-/* Zivi search — interface languages (French, German, Italian).
+/* Better Zivi — interface languages (French, German, Italian).
 
    French is the source language: t("Texte français", {n: 3}) returns the German or Italian
    version from the dictionaries below, or the French text itself. The static page
@@ -162,7 +162,7 @@ const I18N = {
     "allemand": "Deutsch", "français": "Französisch", "italien": "Italienisch", "anglais": "Englisch",
     "moins de 40 h": "unter 40 Std.", "40 à 42,5 h": "40 bis 42,5 Std.", "43 à 45 h": "43 bis 45 Std.", "plus de 45 h": "über 45 Std.",
     // ---- static page
-    "Recherche Zivi": "Zivi-Suche", "Accueil Recherche Zivi": "Startseite Zivi-Suche",
+    "Accueil Better Zivi": "Startseite Better Zivi",
     "Rechercher des tâches, établissements, lieux…": "Aufgaben, Einsatzbetriebe, Orte suchen…",
     "Recherche avancée": "Erweiterte Suche", "Effacer": "Leeren", "Tous ces mots": "Alle diese Wörter",
     "jardin cuisine": "Garten Küche", "Cette expression exacte": "Genau dieser Ausdruck", "aide en cuisine": "Mithilfe in der Küche",
@@ -359,7 +359,7 @@ const I18N = {
     "allemand": "tedesco", "français": "francese", "italien": "italiano", "anglais": "inglese",
     "moins de 40 h": "meno di 40 h", "40 à 42,5 h": "da 40 a 42,5 h", "43 à 45 h": "da 43 a 45 h", "plus de 45 h": "più di 45 h",
     // ---- static page
-    "Recherche Zivi": "Ricerca Zivi", "Accueil Recherche Zivi": "Pagina iniziale Ricerca Zivi",
+    "Accueil Better Zivi": "Pagina iniziale Better Zivi",
     "Rechercher des tâches, établissements, lieux…": "Cerca compiti, istituti, luoghi…",
     "Recherche avancée": "Ricerca avanzata", "Effacer": "Cancella", "Tous ces mots": "Tutte queste parole",
     "jardin cuisine": "giardino cucina", "Cette expression exacte": "Questa espressione esatta", "aide en cuisine": "aiuto in cucina",

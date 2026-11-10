@@ -1,7 +1,7 @@
 [project]
-name = "zivi"
+name = "better-zivi"
 version = "0.1.0"
-description = "Search engine and map UI for ZiviConnect civil-service assignments"
+description = "Better Zivi: search engine and map for ZiviConnect civil-service assignments"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

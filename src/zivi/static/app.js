@@ -1,4 +1,4 @@
-/* Zivi search — front end. Plain JS + Leaflet; talks to the local FastAPI server.
+/* Better Zivi — front end. Plain JS + Leaflet; talks to the local FastAPI server.
    Texts go through t() (i18n.js): French is the source, German and Italian come from there. */
 "use strict";
 

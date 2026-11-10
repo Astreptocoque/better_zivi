@@ -51,7 +51,7 @@ def main(argv: list[str] | None = None) -> None:
 
         from .api import create_app
         url = f"http://{args.host}:{args.port}"
-        print(f"Zivi search running at {url}  (Ctrl+C to stop)")
+        print(f"Better Zivi running at {url}  (Ctrl+C to stop)")
         if not args.no_browser:
             webbrowser.open(url)
         uvicorn.run(create_app(db), host=args.host, port=args.port, log_level="warning")

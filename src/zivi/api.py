@@ -33,7 +33,7 @@ def fail(status: int, key: str, **params) -> HTTPException:
 
 
 def create_app(db_path: Path = config.DB_PATH) -> FastAPI:
-    app = FastAPI(title="Zivi search", version="0.1.0")
+    app = FastAPI(title="Better Zivi", version="0.1.0")
     engine = Engine(db_path)
     ollama = Ollama()
     tr_job = TranslationJob()
