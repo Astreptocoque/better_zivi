@@ -501,6 +501,9 @@ dialog.panel::backdrop { background: rgba(10, 20, 15, .38); backdrop-filter: blu
 .card .hint { margin-top: .5rem; }
 .advanced summary { cursor: pointer; font-weight: 700; }
 .advanced[open] summary { margin-bottom: .4rem; }
+.backup-list > div { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: .55rem 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.backup-list small { color: var(--slate); margin-left: .3rem; }
+.btn.disabled { opacity: .45; pointer-events: none; }
 .danger-list > div { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: .5rem 0; border-top: 1px solid var(--line); }
 .danger-list small { color: var(--slate); margin-left: .3rem; }
 .btn.danger { color: var(--red); }

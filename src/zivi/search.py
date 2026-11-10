@@ -7,6 +7,8 @@ while ignoring that field's own filter, so multi-select filters behave as expect
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import math
@@ -21,9 +23,10 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from .converter import (FTS_COLUMNS, FTS_VERSION, FTS_WEIGHTS, TRANSLATIONS_SQL, build_fts,
+from .converter import (EMBEDDINGS_SQL, FTS_COLUMNS, FTS_VERSION, FTS_WEIGHTS, TRANSLATIONS_SQL,
+                        build_fts,
                         LABELS_VERSION, fts_schema, label_map)
-from .messages import as_msg, msg
+from .messages import ZiviError, as_msg, msg
 from .ollama import DEFAULT_HOST, TRANSLATE_MODEL, host_from
 from .semantic import AISettings, SemanticIndex, assignment_text
 
@@ -53,6 +56,8 @@ def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 TR_FIELDS = ("title", "tasks", "required_skills", "desired_skills", "employer_description",
              "courses", "how_to_apply")
 LANGS = ("fr", "de", "it")  # interface languages, and translation targets
+EXPORT_TR = "better-zivi/translations"  # "kind" of the downloaded files
+EXPORT_AI = "better-zivi/ai-index"
 
 
 def text_hash(text: str) -> str:
@@ -514,6 +519,99 @@ class Engine:
                 db.close()
             self.tr[lang] = {}
             self._fts_dirty[lang] = True
+
+    # ------------------------------------------------------------------ backup / share
+    # Translations and AI vectors can be downloaded and uploaded, to keep them across a
+    # reinstall or share them with someone who has the same export. Uploads only add.
+    def export_translations(self) -> dict:
+        db = self.connect()
+        try:
+            db.execute(TRANSLATIONS_SQL)
+            rows = [list(r) for r in db.execute(
+                "SELECT src_hash, target, source_lang, text FROM translations ORDER BY target")]
+        finally:
+            db.close()
+        return {"kind": EXPORT_TR, "version": 1, "items": rows}
+
+    def import_translations(self, data: dict) -> dict[str, int]:
+        """Add the translations of an exported file; returns how many per language."""
+        if not isinstance(data, dict) or data.get("kind") != EXPORT_TR:
+            raise ZiviError("import_bad_file")
+        rows = []
+        for it in data.get("items") or []:
+            if (isinstance(it, list) and len(it) == 4 and isinstance(it[0], str)
+                    and re.fullmatch(r"[0-9a-f]{40}", it[0]) and it[1] in LANGS
+                    and isinstance(it[3], str) and it[3].strip()):
+                rows.append((it[0], it[1], it[2] if isinstance(it[2], str) else None, it[3]))
+        if not rows:
+            raise ZiviError("import_empty_file")
+        with self.lock:
+            db = self.connect()
+            try:
+                db.execute(TRANSLATIONS_SQL)
+                db.executemany("INSERT OR REPLACE INTO translations VALUES (?,?,?,?)", rows)
+                db.commit()
+            finally:
+                db.close()
+            counts: dict[str, int] = defaultdict(int)
+            for h, target, _src, text in rows:
+                self.tr.setdefault(target, {})[h] = text
+                counts[target] += 1
+            for lang in counts:
+                self._fts_dirty[lang] = True
+                self.rebuild_fts_tr(lang, force=True)
+            return dict(counts)
+
+    def export_ai(self) -> dict:
+        """Every index of the current model (original text and each language)."""
+        db = self.connect()
+        try:
+            db.execute(EMBEDDINGS_SQL)
+            indexes: dict[str, list] = defaultdict(list)
+            for aid, key, h, vec in db.execute(
+                    "SELECT assignment_id, model, text_hash, vec FROM embeddings "
+                    "WHERE model=? OR model LIKE ? ORDER BY model, assignment_id",
+                    (self.ai.model, f"{self.ai.model}@%")):
+                indexes[key].append([aid, h, base64.b64encode(vec).decode("ascii")])
+        finally:
+            db.close()
+        return {"kind": EXPORT_AI, "version": 1, "model": self.ai.model, "indexes": indexes}
+
+    def import_ai(self, data: dict) -> dict[str, int]:
+        """Add the vectors of an exported file (any model); returns how many per index."""
+        if not isinstance(data, dict) or data.get("kind") != EXPORT_AI:
+            raise ZiviError("import_bad_file")
+        rows, counts = [], {}
+        for key, items in (data.get("indexes") or {}).items():
+            if not isinstance(key, str) or not re.fullmatch(r"[\w.:/@+-]{1,200}", key):
+                continue
+            dim = None
+            n = 0
+            for it in items if isinstance(items, list) else []:
+                try:
+                    aid, h, b64 = int(it[0]), str(it[1]), it[2]
+                    vec = base64.b64decode(b64, validate=True)
+                except (TypeError, ValueError, IndexError, binascii.Error):
+                    continue
+                if not vec or len(vec) % 4 or (dim is not None and len(vec) != dim):
+                    continue  # every vector of one index has the same size
+                dim = len(vec)
+                rows.append((aid, key, h, vec))
+                n += 1
+            if n:
+                counts[key] = n
+        if not rows:
+            raise ZiviError("import_empty_file")
+        with self.lock:
+            db = self.connect()
+            try:
+                db.execute(EMBEDDINGS_SQL)
+                db.executemany("INSERT OR REPLACE INTO embeddings VALUES (?,?,?,?)", rows)
+                db.commit()
+                self.semantic.load(db, self.ai_index_key)
+            finally:
+                db.close()
+        return counts
 
     def localized(self, i: int, field: str, lang: str) -> str | None:
         """A field in `lang`: the original when the assignment is written in it, else its

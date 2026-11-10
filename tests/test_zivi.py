@@ -643,3 +643,56 @@ def test_ollama_released_after_the_page_left():
     assert ol.up and ol.calls[-1] == "start"
     enabled[0] = False  # option off: never released
     assert not w.check(w.last_seen + 600)
+
+
+def test_backup_download_and_upload(store, tmp_path, monkeypatch):
+    import gzip
+    import shutil
+    db, _ = store
+    import zivi.semantic as sem
+    monkeypatch.setattr(sem.Embedder, "embed",
+                        lambda self, t: np.ones((len(t), 3), dtype=np.float32))
+    a = TestClient(create_app(db))
+    a.post("/api/ai/config", json={"base_url": "http://localhost:11434/v1", "model": "nomic"})
+    todo = a.get("/api/translate/todo", params={"limit": 500, "lang": "fr"}).json()["items"]
+    a.post("/api/translate/save", json={"lang": "fr", "items": [
+        {"hash": t["hash"], "text": "FR " + t["text"]} for t in todo]})
+    e = Engine(db)
+    e.semantic.build(str(db), e.ai_texts(), e.ai, pause=0, key=e.ai_index_key)
+
+    tr_file = a.get("/api/translate/export")
+    ai_file = a.get("/api/ai/export")
+    assert tr_file.headers["content-type"] == "application/gzip"
+    assert "better-zivi-ai-nomic" in ai_file.headers["content-disposition"]
+    assert json.loads(gzip.decompress(tr_file.content))["kind"] == "better-zivi/translations"
+
+    # a second database from the same export, without translations nor AI index
+    other = tmp_path / "other" / "zivi.sqlite"
+    other.parent.mkdir()
+    shutil.copy(db, other)
+    import sqlite3
+    con = sqlite3.connect(other)
+    con.execute("DELETE FROM translations")
+    con.execute("DELETE FROM embeddings")
+    con.commit()
+    con.close()
+    b = TestClient(create_app(other))
+    b.post("/api/ai/config", json={"base_url": "http://localhost:11434/v1", "model": "nomic"})
+    assert b.get("/api/translate", params={"lang": "fr"}).json()["done"] == 0
+
+    r = b.post("/api/translate/import", files={"file": ("t.json.gz", tr_file.content)})
+    assert r.json()["imported"] == {"fr": len(todo)}
+    assert b.get("/api/translate", params={"lang": "fr"}).json()["done"] == len(todo)
+    r = b.post("/api/ai/import", files={"file": ("a.json.gz", ai_file.content)})
+    assert r.json()["imported"] == {"nomic": 5}
+    info = b.get("/api/ai").json()
+    assert info["ready"] and info["pending"] == 0  # nothing to recompute
+
+    # wrong or broken files are refused, nothing changes
+    r = b.post("/api/ai/import", files={"file": ("t.json.gz", tr_file.content)})
+    assert r.status_code == 400 and r.json()["detail"]["key"] == "import_bad_file"
+    r = b.post("/api/translate/import", files={"file": ("x.json", b"not json")})
+    assert r.status_code == 400 and r.json()["detail"]["key"] == "import_unreadable"
+    plain = json.dumps({"kind": "better-zivi/translations", "items": [["zz", "fr", None, "x"]]})
+    r = b.post("/api/translate/import", files={"file": ("p.json", plain.encode())})
+    assert r.status_code == 400 and r.json()["detail"]["key"] == "import_empty_file"

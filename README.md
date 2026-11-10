@@ -103,7 +103,10 @@ current results with contact details (opens directly in Excel).
 
 - **Base de données**: counts, the imported file and its date, where the database file is,
   **Charger un export JSON…**, and under *Options avancées* buttons to clear the favourites,
-  the translations or the AI index.
+  the translations or the AI index. *Sauvegarde et partage* downloads the translations (every
+  language) or the AI index (every language of the current model) as a `.json.gz` file, and
+  uploads such a file back: to keep them across a reinstall, or to give them to someone with
+  the same export instead of recomputing. An upload only adds, it never erases anything.
 - **Traduction**: translates the assignments into the interface language (below).
 - **Recherche IA**: the AI search settings and index (below).
 

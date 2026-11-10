@@ -7,7 +7,10 @@ Messages meant for people (warnings, errors, progress) are sent as {"key", "para
 from __future__ import annotations
 
 import csv
+import gzip
 import io
+import json
+import re
 import shutil
 import sqlite3
 import threading
@@ -21,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from . import config
 from .converter import convert
 from .geocode import Geocoder, PostcodeTable
-from .messages import as_msg, msg
+from .messages import ZiviError, as_msg, msg
 from .ollama import Ollama, PageWatch, TranslationJob, host_from
 from .search import LANGS, Engine
 
@@ -30,6 +33,24 @@ STATIC = Path(__file__).parent / "static"
 
 def fail(status: int, key: str, **params) -> HTTPException:
     return HTTPException(status, msg(key, **params))
+
+
+def gz_download(data: dict, filename: str) -> StreamingResponse:
+    """A downloaded backup: compact JSON, gzip-compressed."""
+    body = gzip.compress(json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode())
+    return StreamingResponse(iter([body]), media_type="application/gzip",
+                             headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
+async def read_upload(file: UploadFile) -> dict:
+    """An uploaded backup: gzip-compressed or plain JSON."""
+    raw = await file.read()
+    try:
+        if raw[:2] == b"\x1f\x8b":
+            raw = gzip.decompress(raw)
+        return json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError) as exc:
+        raise fail(400, "import_unreadable") from exc
 
 
 def create_app(db_path: Path = config.DB_PATH) -> FastAPI:
@@ -154,6 +175,18 @@ def create_app(db_path: Path = config.DB_PATH) -> FastAPI:
             engine.tr_model = str(body["model"]).strip()
         engine.save_ai_settings()
         return {"model": engine.tr_model, "host": engine.ollama_host}
+
+    @app.get("/api/translate/export")
+    def translate_export():
+        return gz_download(engine.export_translations(), "better-zivi-translations.json.gz")
+
+    @app.post("/api/translate/import")
+    async def translate_import(file: UploadFile = File(...)):
+        data = await read_upload(file)
+        try:
+            return {"imported": engine.import_translations(data)}
+        except ZiviError as exc:
+            raise HTTPException(400, exc.msg) from exc
 
     @app.post("/api/translate/retry")
     def translate_retry(lang: str | None = None):
@@ -340,6 +373,21 @@ def create_app(db_path: Path = config.DB_PATH) -> FastAPI:
         threading.Thread(target=engine.semantic.build, daemon=True,
                          args=(str(db_path), texts, engine.ai), kwargs={"key": key}).start()
         return {"started": True, "texts": len(texts), "key": key}
+
+    @app.get("/api/ai/export")
+    def ai_export():
+        safe = re.sub(r"[^\w.-]+", "-", engine.ai.model).strip("-") or "model"
+        return gz_download(engine.export_ai(), f"better-zivi-ai-{safe}.json.gz")
+
+    @app.post("/api/ai/import")
+    async def ai_import(file: UploadFile = File(...)):
+        if engine.semantic.progress.get("running"):
+            raise fail(409, "ai_stop_first")
+        data = await read_upload(file)
+        try:
+            return {"imported": engine.import_ai(data)}
+        except ZiviError as exc:
+            raise HTTPException(400, exc.msg) from exc
 
     @app.post("/api/ai/stop")
     def ai_stop():

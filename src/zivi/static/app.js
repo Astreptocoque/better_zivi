@@ -988,6 +988,7 @@ async function loadDbInfo() {
   ].join("");
   const cp = $("#copyPath");
   if (cp) cp.onclick = async () => { try { await navigator.clipboard.writeText(st.db_path); cp.textContent = t("Copié"); } catch { cp.textContent = t("Copie impossible"); } };
+  renderBackup(byLang);
   const trHere = byLang[LANG] || 0;
   $("#dzFav").textContent = tn(st.favorites, "{n} favori", "{n} favoris");
   $("#dzTr").textContent = `${tn(trHere, "{n} texte traduit", "{n} textes traduits")} (${langName(LANG)})`;
@@ -996,6 +997,51 @@ async function loadDbInfo() {
   $("#dzTrBtn").disabled = !trHere || TR.running;
   $("#dzAiBtn").disabled = !ai.ready || ai.running;
 }
+/* ---- backup and sharing: download / upload the translations and the AI index */
+async function renderBackup(byLang) {
+  const nTr = Object.values(byLang).reduce((a, b) => a + b, 0);
+  $("#bkTr").textContent = nTr
+    ? `${tn(nTr, "{n} texte traduit", "{n} textes traduits")} (${Object.entries(byLang).map(([l, n]) => `${l.toUpperCase()} ${nf(n)}`).join(" · ")})`
+    : t("aucune pour l’instant");
+  $("#bkTrDown").classList.toggle("disabled", !nTr);
+  let info = null;
+  try { info = await (await api("/api/ai")).json(); } catch { /* shown as none */ }
+  const built = builtNames(info?.built, info?.settings?.model);
+  const vectors = Object.values(info?.built || {}).reduce((a, b) => a + b, 0);
+  $("#bkAi").textContent = vectors
+    ? `${info.settings.model} · ${t("{n} vecteurs ({model})", { n: nf(vectors), model: built.join(", ") })}`
+    : t("aucun pour l’instant");
+  $("#bkAiDown").classList.toggle("disabled", !vectors);
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-upload]"); if (!b) return;
+  $("#bkFile").dataset.kind = b.dataset.upload;
+  $("#bkFile").click();
+});
+$("#bkFile").addEventListener("change", async (e) => {
+  const file = e.target.files[0]; e.target.value = "";
+  if (!file) return;
+  const kind = e.target.dataset.kind, out = $("#bkStatus");
+  out.classList.remove("err"); out.textContent = t("Import de {file}…", { file: file.name });
+  const fd = new FormData(); fd.append("file", file);
+  try {
+    const r = await fetch(`/api/${kind}/import`, { method: "POST", body: fd });
+    const body = await r.json();
+    if (!r.ok) throw new Error(fmtMsg(body.detail) || r.statusText);
+    // "FR 1'234" for translations; "nomic-embed-text DE 420" for AI indexes
+    const name = (k) => (kind === "translate" ? k.toUpperCase()
+      : k.includes("@") ? `${k.split("@")[0]} ${k.split("@")[1].toUpperCase()}` : k);
+    const parts = Object.entries(body.imported).map(([k, n]) => `${name(k)} ${nf(n)}`);
+    const total = Object.values(body.imported).reduce((a, b) => a + b, 0);
+    out.textContent = kind === "translate"
+      ? t("{n} traductions importées ({detail}).", { n: nf(total), detail: parts.join(" · ") })
+      : t("{n} vecteurs importés ({detail}).", { n: nf(total), detail: parts.join(" · ") });
+    loadDbInfo(); refreshTrStats();
+    if (S.view_tr || S.text) runSearchNow();
+  } catch (err) {
+    out.classList.add("err"); out.textContent = t("Import impossible : {error}", { error: err.message });
+  }
+});
 async function danger(question, call) {
   if (!confirm(question)) return;
   try { await call(); } catch (e) { alert(e.message); }

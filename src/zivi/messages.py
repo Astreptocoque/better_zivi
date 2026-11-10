@@ -27,6 +27,9 @@ FR = {
     "tr_running": "La traduction est déjà en cours",
     "ollama_missing": "Ollama n'est pas installé sur cet ordinateur",
     "model_required": "Indiquez un modèle",
+    "import_bad_file": "Ce fichier n'est pas une sauvegarde de Better Zivi de ce type.",
+    "import_empty_file": "Ce fichier ne contient rien d'utilisable.",
+    "import_unreadable": "Fichier illisible (JSON ou JSON compressé gzip attendu).",
     # import
     "import_start": "Démarrage",
     "import_failed": "Échec de l'import",

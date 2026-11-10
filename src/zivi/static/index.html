@@ -239,6 +239,22 @@
               lieux déjà trouvés sont conservés.</span>
           </div>
         </div>
+        <div class="card">
+          <h3>Sauvegarde et partage</h3>
+          <p class="hint">Télécharger les traductions ou l’index IA évite de tout recalculer : pour les garder
+            lors d’une réinstallation, ou les donner à quelqu’un qui a le même export. Un fichier importé
+            s’ajoute à ce qui existe déjà, rien n’est effacé.</p>
+          <div class="backup-list">
+            <div><span><b>Traductions</b> <small id="bkTr"></small></span>
+              <span class="row-actions"><a class="btn" id="bkTrDown" href="/api/translate/export" download>Télécharger</a>
+                <button type="button" class="btn" data-upload="translate">Importer…</button></span></div>
+            <div><span><b>Index IA</b> <small id="bkAi"></small></span>
+              <span class="row-actions"><a class="btn" id="bkAiDown" href="/api/ai/export" download>Télécharger</a>
+                <button type="button" class="btn" data-upload="ai">Importer…</button></span></div>
+          </div>
+          <input type="file" id="bkFile" accept=".gz,.json,application/gzip,application/json" hidden>
+          <p class="status" id="bkStatus" role="status"></p>
+        </div>
         <details class="card advanced">
           <summary>Options avancées</summary>
           <p class="hint">Ces actions sont définitives.</p>
