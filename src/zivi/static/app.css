@@ -397,6 +397,16 @@ body.map-full #filters, body.map-full #results { display: none; }
 }
 [data-apply]:hover, [data-apply]:focus-visible { background: color-mix(in srgb, var(--spruce) 9%, transparent); outline: none; }
 [data-apply]:hover::after, [data-apply]:focus-visible::after { opacity: 1; transform: translateY(-50%) scale(1); }
+/* already a filter: ✓ stays visible; on hover it turns into − (click removes it) */
+[data-apply].applied { background: color-mix(in srgb, var(--spruce) 12%, transparent); }
+[data-apply].applied::after { content: "✓"; opacity: 1; transform: translateY(-50%) scale(1); }
+[data-apply].applied:hover::after, [data-apply].applied:focus-visible::after { content: "−"; background: var(--red); }
+.d-grid div[data-apply].applied { border-left-color: var(--spruce); }
+.d-tasks .d-attr.applied { border-color: var(--spruce); }
+.d-filter-note {
+  margin: -.2rem 0 .7rem; padding: .45rem .7rem; border-radius: 8px; font-size: .86rem;
+  background: color-mix(in srgb, var(--spruce) 10%, var(--panel)); color: var(--ink);
+}
 .d-grid div[data-apply] { padding: .2rem 1.6rem .2rem .6rem; margin-left: -.1rem; }
 .d-grid div[data-apply]:hover { border-left-color: var(--spruce); }
 .d-attr { display: inline-block; padding: .05rem .35rem; }

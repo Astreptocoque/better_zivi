@@ -667,6 +667,7 @@ async function openDetail(id) {
        ${src !== LANG ? `<button class="btn" type="button" id="trBtn" title="${esc(t("Traduire le texte de l’affectation dans la langue de l’interface avec le traducteur intégré du navigateur"))}"><span aria-hidden="true">文A</span><span class="tr-label"> ${t("Traduire")}</span></button>` : ""}
        ${favBtn(id)}</p>
     <p class="tr-status" id="trStatus" role="status" hidden></p>
+    <p class="d-filter-note" id="dFilterNote" role="status" hidden></p>
     <dl class="d-grid">
       ${fact(t("Durée minimale"), d.min_weeks ? tn(d.min_weeks, "{n} semaine", "{n} semaines") : "", d.min_weeks && { min_weeks_min: d.min_weeks, min_weeks_max: d.min_weeks })}
       ${fact(t("Heures par semaine"), d.hours_per_week, d.hours_per_week && { hours_min: d.hours_per_week, hours_max: d.hours_per_week })}
@@ -690,6 +691,7 @@ async function openDetail(id) {
 ${d.contact_phone ? `<a href="tel:${esc(d.contact_phone.replace(/\s/g, ""))}">${esc(d.contact_phone)}</a>` : ""}
 ${d.contact_email ? `<a href="mailto:${esc(d.contact_email)}">${esc(d.contact_email)}</a>` : ""}</p></section>
     ${sec(t("Comment postuler"), d.how_to_apply, "how_to_apply")}`;
+  markApplied(); // the attributes already used as filters show ✓
   const tb = $("#trBtn");
   detailTr = d.tr || {};
   if (tb) {
@@ -872,20 +874,42 @@ function calendar(weeks) {
     `<span class="${(from && w >= from && (!to || w <= to)) || (!from && to && w <= to) ? "in" : ""}">${w.slice(8)}.${w.slice(5, 7)}</span>`).join("")}</div>`).join("")}</div>`;
 }
 function closeDrawer() { $("#drawer").hidden = true; openId = null; }
-/* An attribute of the open entry was clicked: add that filter, show the matching entries.
+/* An attribute of the open entry was clicked: add that filter in the background (the panel
+   stays open, so several can be added), or remove it if it is already on (✓).
    Lists (sector, canton, task types…) gain the value; yes/no and ranges take it. */
-function applyAttribute(el) {
+const isApplied = (filter) => Object.entries(filter).every(([k, v]) =>
+  (Array.isArray(v) ? v.every((x) => (S[k] || []).includes(x)) : String(S[k]) === String(v)));
+async function applyAttribute(el) {
   const filter = JSON.parse(el.dataset.apply);
+  const off = isApplied(filter);
+  const empty = blank();
   for (const [k, v] of Object.entries(filter)) {
-    if (Array.isArray(v)) S[k] = [...new Set([...(S[k] || []), ...v])];
-    else S[k] = v;
+    if (Array.isArray(v)) S[k] = off ? (S[k] || []).filter((x) => !v.includes(x)) : [...new Set([...(S[k] || []), ...v])];
+    else S[k] = off ? empty[k] : v;
   }
-  if (filter.task_areas) S.task_areas_mode = S.task_areas.length > 1 ? S.task_areas_mode : "any";
-  closeDrawer();
+  if (filter.task_areas && S.task_areas.length <= 1) S.task_areas_mode = "any";
   bindInputs();
-  showPane("results");
+  markApplied();
   $("#results").scrollTop = 0;
-  runSearchNow();
+  await runSearchNow();
+  showFilterNote();
+}
+/* ✓ on the attributes that are current filters; the others offer "+" */
+function markApplied() {
+  for (const el of $$("#drawerBody [data-apply]")) {
+    const on = isApplied(JSON.parse(el.dataset.apply));
+    el.classList.toggle("applied", on);
+    el.setAttribute("aria-pressed", String(on));
+    el.title = on ? t("Retirer ce filtre") : t("Filtrer : afficher les affectations avec cette valeur");
+  }
+}
+/* how many entries the filters now give, without leaving the panel */
+function showFilterNote() {
+  const note = $("#dFilterNote");
+  if (!note || !lastResult) return;
+  note.hidden = false;
+  note.textContent = t("Filtres mis à jour : {count} correspondent. Fermez la fiche pour les voir.",
+    { count: tn(lastResult.total, "{n} affectation", "{n} affectations") });
 }
 $("#drawerBody").addEventListener("click", (e) => { const el = e.target.closest("[data-apply]"); if (el) applyAttribute(el); });
 $("#drawerBody").addEventListener("keydown", (e) => {
