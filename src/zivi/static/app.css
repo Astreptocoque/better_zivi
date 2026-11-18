@@ -156,6 +156,22 @@ h3 { font-size: 1rem; margin: 0 0 .5rem; display: flex; align-items: center; jus
   display: flex; justify-content: space-between; align-items: center; margin: 0 .2rem .6rem;
   font-size: 1.05rem;
 }
+.head-links { display: flex; gap: .7rem; flex-wrap: wrap; justify-content: flex-end; font-size: .9rem; }
+.sf-note { font-size: .85rem; color: var(--slate); margin: .3rem 0; }
+.saved-filters { list-style: none; padding: 0; margin: .6rem 0; max-height: 50vh; overflow-y: auto; }
+.saved-filters li { display: flex; align-items: center; gap: .3rem; border-bottom: 1px solid var(--line); }
+.saved-filters li:last-child { border-bottom: 0; }
+.sf-load {
+  flex: 1; display: flex; justify-content: space-between; align-items: baseline; gap: .8rem; text-align: left;
+  border: 0; background: none; color: var(--ink); padding: .55rem .5rem; border-radius: 6px; cursor: pointer; font: inherit;
+}
+.sf-load:hover, .sf-load:focus-visible { background: var(--mist); }
+.sf-load small { color: var(--slate); white-space: nowrap; }
+.sf-del {
+  border: 0; background: none; color: var(--slate); font-size: 1.2rem; line-height: 1; width: 2rem; height: 2rem;
+  border-radius: 6px; cursor: pointer;
+}
+.sf-del:hover, .sf-del:focus-visible { background: var(--mist); color: #C0392B; }
 .group {
   margin: 0 0 .6rem; padding: .75rem .8rem .8rem; background: var(--panel);
   border: 1px solid var(--line); border-radius: 12px;

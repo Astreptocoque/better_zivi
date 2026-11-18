@@ -606,6 +606,65 @@ function resetAll() {
 }
 $("#resetBtn").addEventListener("click", resetAll);
 
+/* ------------------------------------------------------------------ saved filters
+   Named snapshots of the filters, kept in this browser. Display preferences
+   (translation, AI depth, favourites view) are not part of a snapshot. */
+const PREF_KEYS = ["ai_top_k", "favorites_only", "view_tr", "search_original"];
+const savedFilters = () => store.get("zivi.savedFilters", []);
+const filterSnapshot = () => {
+  const snap = JSON.parse(JSON.stringify(S));
+  for (const k of PREF_KEYS) delete snap[k];
+  return snap;
+};
+const sameName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+$("#saveFiltersBtn").addEventListener("click", () => {
+  $("#sfName").value = ""; $("#sfOverwrite").hidden = true;
+  $("#saveFiltersDlg").showModal(); $("#sfName").focus();
+});
+$("#sfName").addEventListener("input", (e) => {
+  const name = e.target.value;
+  $("#sfOverwrite").hidden = !name.trim() || !savedFilters().some((f) => sameName(f.name, name));
+});
+$("#sfCancel").addEventListener("click", () => $("#saveFiltersDlg").close());
+$("#saveFiltersForm").addEventListener("submit", (e) => {
+  const name = $("#sfName").value.trim();
+  if (!name) { e.preventDefault(); return; }
+  const list = savedFilters().filter((f) => !sameName(f.name, name));
+  list.push({ name, saved: new Date().toISOString(), state: filterSnapshot() });
+  list.sort((a, b) => a.name.localeCompare(b.name, LOCALE[LANG]));
+  store.set("zivi.savedFilters", list);
+});
+
+function renderSavedFilters() {
+  const list = savedFilters();
+  $("#lfEmpty").hidden = list.length > 0;
+  $("#lfList").innerHTML = list.map((f, i) => `<li>
+    <button type="button" class="sf-load" data-sf="${i}">${esc(f.name)}
+      <small>${esc(new Date(f.saved).toLocaleDateString(LOCALE[LANG]))}</small></button>
+    <button type="button" class="sf-del" data-sf-del="${i}" title="${esc(t("Supprimer"))}"
+      aria-label="${esc(t("Supprimer {name}", { name: f.name }))}">×</button></li>`).join("");
+}
+$("#loadFiltersBtn").addEventListener("click", () => { renderSavedFilters(); $("#loadFiltersDlg").showModal(); });
+$("#lfList").addEventListener("click", (e) => {
+  const list = savedFilters();
+  const del = e.target.closest("[data-sf-del]");
+  if (del) {
+    list.splice(+del.dataset.sfDel, 1);
+    store.set("zivi.savedFilters", list);
+    renderSavedFilters();
+    return;
+  }
+  const pick = e.target.closest("[data-sf]");
+  if (!pick) return;
+  const saved = list[+pick.dataset.sf]; if (!saved) return;
+  const keep = Object.fromEntries(PREF_KEYS.map((k) => [k, S[k]]));
+  S = Object.assign(blank(), JSON.parse(JSON.stringify(saved.state)), keep);
+  $("#loadFiltersDlg").close();
+  fitted = false;
+  bindInputs(); runSearchNow();
+});
+
 /* ------------------------------------------------------------------ favourites */
 function favBtn(id) {
   const on = favs.has(id);

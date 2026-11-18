@@ -86,7 +86,11 @@
   <aside class="pane filters" id="filters" aria-label="Filtres">
     <div class="filters-head">
       <strong>Filtres</strong>
-      <button class="link" id="resetBtn" type="button">Tout effacer</button>
+      <span class="head-links">
+        <button class="link" id="saveFiltersBtn" type="button" title="Enregistrer les filtres actuels sous un nom">Enregistrer</button>
+        <button class="link" id="loadFiltersBtn" type="button" title="Charger des filtres enregistrés">Charger</button>
+        <button class="link" id="resetBtn" type="button">Tout effacer</button>
+      </span>
     </div>
 
     <section class="group" aria-labelledby="h-period">
@@ -199,6 +203,26 @@
     <div id="drawerBody"></div>
   </div>
 </div>
+
+<dialog id="saveFiltersDlg" aria-labelledby="sfTitle">
+  <form method="dialog" id="saveFiltersForm">
+    <h2 id="sfTitle">Enregistrer les filtres</h2>
+    <label>Nom<input type="text" id="sfName" maxlength="80" required autocomplete="off"
+      placeholder="p. ex. Été 2027, près de Lausanne"></label>
+    <p class="sf-note" id="sfOverwrite" hidden>Un jeu de filtres porte déjà ce nom : il sera remplacé.</p>
+    <div class="dlg-actions">
+      <button class="btn" type="button" id="sfCancel">Annuler</button>
+      <button class="btn primary" type="submit">Enregistrer</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="loadFiltersDlg" aria-labelledby="lfTitle">
+  <h2 id="lfTitle">Filtres enregistrés</h2>
+  <ul class="saved-filters" id="lfList"></ul>
+  <p class="sf-note" id="lfEmpty" hidden>Aucun filtre enregistré. Utilisez « Enregistrer » au-dessus des filtres.</p>
+  <form method="dialog" class="dlg-actions"><button class="btn">Fermer</button></form>
+</dialog>
 
 <dialog id="importDlg">
   <h2>Chargement des données</h2>
