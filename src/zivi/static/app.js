@@ -64,7 +64,7 @@ function traitValue(field, value) {
 /* ------------------------------------------------------------------ state */
 const blank = () => ({
   text: "", text_mode: "keyword", sort: "", ai_top_k: 200,
-  period: { from: "", to: "", duration_weeks: "", mode: "any" },
+  period: { from: "", to: "", duration_weeks: "", mode: "any", fits_min: false },
   centers: [], radius: 25, bboxOnly: false,
   housing: null, meals: null, reputation_check: null, priority_program: null, abroad: null,
   weekend: [], night: [], no_course_required: false,
@@ -97,7 +97,10 @@ function query(extra = {}) {
     limit: PAGE, offset: 0,
   };
   const p = S.period;
-  if (p.from || p.to) q.period = { from: p.from || null, to: p.to || null, mode: p.mode, duration_weeks: p.duration_weeks || null };
+  if (p.from || p.to || (p.fits_min && p.duration_weeks)) {
+    q.period = { from: p.from || null, to: p.to || null, mode: p.mode,
+                 duration_weeks: p.duration_weeks || null, fits_min: !!p.fits_min };
+  }
   if (S.centers.length) q.geo = { centers: S.centers };
   if (S.bboxOnly && bbox) q.bbox = bbox;
   return Object.assign(q, extra);
@@ -507,6 +510,7 @@ function bindInputs() {
   const v = (id, val) => { $(id).value = val ?? ""; };
   v("#q", S.text); v("#pFrom", S.period.from); v("#pTo", S.period.to); v("#pDur", S.period.duration_weeks);
   $("#pAll").checked = S.period.mode === "all";
+  $("#pFit").checked = !!S.period.fits_min;
   v("#mwMin", S.min_weeks_min); v("#mwMax", S.min_weeks_max); v("#hMin", S.hours_min); v("#hMax", S.hours_max);
   $("#noCourse").checked = !!S.no_course_required;
   $(`input[name=mode][value=${S.text_mode}]`).checked = true;
@@ -585,6 +589,7 @@ $("#pFrom").addEventListener("change", (e) => { S.period.from = e.target.value; 
 $("#pTo").addEventListener("change", (e) => { S.period.to = e.target.value; runSearch(); });
 $("#pDur").addEventListener("input", (e) => { S.period.duration_weeks = e.target.value; runSearch(); });
 $("#pAll").addEventListener("change", (e) => { S.period.mode = e.target.checked ? "all" : "any"; runSearch(); });
+$("#pFit").addEventListener("change", (e) => { S.period.fits_min = e.target.checked; runSearch(); });
 $("#noCourse").addEventListener("change", (e) => { S.no_course_required = e.target.checked; runSearch(); });
 $("#sort").addEventListener("change", (e) => { S.sort = e.target.value; runSearch(); });
 let sortBeforeRarity = "";

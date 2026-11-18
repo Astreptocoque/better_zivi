@@ -111,6 +111,10 @@ def test_period_filters(store):
                                     "duration_weeks": 3}})) == [1]
     assert ids(e.search({"period": {"from": "2027-08-02", "to": "2027-08-09",
                                     "mode": "all"}})) == [1, 4]
+    # only assignments whose own minimum fits in the weeks the user can serve
+    assert ids(e.search({"period": {"duration_weeks": 4, "fits_min": True}})) == [1, 3, 4, 5]
+    assert ids(e.search({"period": {"duration_weeks": 8, "fits_min": True}})) == [1, 2, 3, 4, 5]
+    assert ids(e.search({"period": {"duration_weeks": 4}})) == [1, 2, 3, 4, 5]
 
 
 def test_geo_radius_and_distance_sort(store):

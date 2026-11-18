@@ -800,6 +800,12 @@ class Engine:
 
             f["period"] = period_ok
 
+        # "I can serve N weeks": drop assignments whose required minimum is longer.
+        # Assignments that state no minimum are kept.
+        fit = int(period.get("duration_weeks") or 0) if period.get("fits_min") else 0
+        if fit > 0:
+            f["fits_min"] = lambda i, r: not r.get("min_weeks") or r["min_weeks"] <= fit
+
         centers = [c for c in ((q.get("geo") or {}).get("centers") or [])
                    if c.get("lat") is not None and c.get("lon") is not None]
         if centers:
