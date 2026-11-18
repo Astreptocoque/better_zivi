@@ -81,7 +81,7 @@ let lastResult = null;
 let offset = 0;
 let bbox = null;
 
-function query(extra = {}) {
+function query(extra = {}, raw = false) {
   const q = {
     text: S.text, text_mode: S.text_mode, sort: S.sort || undefined, ai_top_k: S.ai_top_k,
     housing: S.housing, meals: S.meals, reputation_check: S.reputation_check,
@@ -103,7 +103,23 @@ function query(extra = {}) {
   }
   if (S.centers.length) q.geo = { centers: S.centers };
   if (S.bboxOnly && bbox) q.bbox = bbox;
-  return Object.assign(q, extra);
+  Object.assign(q, extra);
+  if (raw || !favNoFilters) return q;
+  // favourites "without the filters": the filters stay set, they are just not sent
+  return {
+    text: "", text_mode: "keyword", sort: q.sort, favorites_only: true,
+    lang: q.lang, view_lang: q.view_lang, search_original: q.search_original,
+    limit: q.limit, offset: q.offset,
+  };
+}
+/* Set by "Afficher les favoris sans les filtres"; not saved, and dropped as soon as a filter
+   changes (or the favourites view is left), so the filters apply again. */
+let favNoFilters = false, favNoFiltersKey = "";
+const filterKey = () => JSON.stringify(query({ offset: 0 }, true));
+function showFavoritesWithoutFilters(on) {
+  favNoFilters = on; favNoFiltersKey = on ? filterKey() : "";
+  fitted = false;
+  runSearchNow();
 }
 
 /* ------------------------------------------------------------------ map */
@@ -266,6 +282,7 @@ map.on("click", (e) => {
 let seq = 0;
 async function runSearchNow() {
   store.set("zivi.state", S);
+  if (favNoFilters && (!S.favorites_only || filterKey() !== favNoFiltersKey)) favNoFilters = false;
   const my = ++seq;
   offset = 0;
   let res;
@@ -305,14 +322,28 @@ async function loadMore() {
 
 function renderCount(res) {
   const mode = res.mode_used === "semantic" ? ` · ${t("classées par l’IA")}` : res.mode_used === "hybrid" ? ` · ${t("mots-clés + IA")}` : "";
-  const favNote = S.favorites_only ? ` · ${t("favoris uniquement")}` : "";
+  const favNote = !S.favorites_only ? ""
+    : favNoFilters ? ` · ${t("favoris, sans les filtres")} <button type="button" class="link" id="favRefilter">${t("Appliquer les filtres")}</button>`
+    : ` · ${t("favoris uniquement")}`;
   $("#count").innerHTML = `<b>${nf(res.total)}</b> ${res.total === 1 ? t("affectation") : t("affectations")}${favNote}${mode}`;
+  if (favNoFilters) $("#favRefilter").onclick = () => showFavoritesWithoutFilters(false);
   $("#sort").value = S.sort || "";
   $("#rarityBtn").setAttribute("aria-pressed", String(S.sort === "rarity"));
   document.body.classList.toggle("rarity-mode", S.sort === "rarity");
 }
 function showWarnings(ws) { $("#warnings").innerHTML = ws.map((w) => `<p>${esc(fmtMsg(w))}</p>`).join(""); }
+/* favourites view: say how many favourites the filters hide, with a way to see them all */
+function renderFavHidden(res) {
+  const el = $("#favHidden");
+  const hidden = S.favorites_only && !favNoFilters && res.total ? (res.favorites || 0) - res.total : 0;
+  el.hidden = hidden <= 0;
+  if (el.hidden) return;
+  el.innerHTML = `<span>${tn(hidden, "{n} favori masqué par les filtres", "{n} favoris masqués par les filtres")}</span>
+    <button class="btn sm" type="button" id="favHiddenAll">${t("Afficher les favoris sans les filtres")}</button>`;
+  $("#favHiddenAll").onclick = () => showFavoritesWithoutFilters(true);
+}
 function renderEmpty(res) {
+  renderFavHidden(res);
   const el = $("#empty");
   if (res.total) { el.hidden = true; return; }
   el.hidden = false;
@@ -323,8 +354,10 @@ function renderEmpty(res) {
       <button class="btn" type="button" id="emptyFav">${t("Afficher toutes les affectations")}</button>`;
     $("#emptyFav").onclick = () => setFavoritesOnly(false);
   } else {
-    el.innerHTML = `<p>${t("Aucune affectation ne correspond à tous ces filtres.")}</p><button class="btn" type="button" id="emptyReset">${t("Effacer tous les filtres")}</button>`;
+    el.innerHTML = `<p>${t("Aucune affectation ne correspond à tous ces filtres.")}</p><button class="btn" type="button" id="emptyReset">${t("Effacer tous les filtres")}</button>` +
+      (S.favorites_only ? `<br><button class="btn" type="button" id="emptyFavAll">${t("Afficher les favoris sans les filtres")}</button>` : "");
     $("#emptyReset").onclick = resetAll;
+    if (S.favorites_only) $("#emptyFavAll").onclick = () => showFavoritesWithoutFilters(true);
   }
 }
 

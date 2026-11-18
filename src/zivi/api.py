@@ -406,6 +406,15 @@ def create_app(db_path: Path = config.DB_PATH) -> FastAPI:
         return engine.stats()["ai_index"]
 
     # ------------------------------------------------------------------ UI
+    @app.middleware("http")
+    async def revalidate_ui(request, call_next):
+        # the page and its scripts change with every update: make the browser check
+        # (cheap, thanks to ETag) instead of reusing a stale copy
+        response = await call_next(request)
+        if request.url.path == "/" or request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
     @app.get("/")

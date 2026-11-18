@@ -86,11 +86,15 @@
   <aside class="pane filters" id="filters" aria-label="Filtres">
     <div class="filters-head">
       <strong>Filtres</strong>
-      <span class="head-links">
-        <button class="link" id="saveFiltersBtn" type="button" title="Enregistrer les filtres actuels sous un nom">Enregistrer</button>
-        <button class="link" id="loadFiltersBtn" type="button" title="Charger des filtres enregistrés">Charger</button>
-        <button class="link" id="resetBtn" type="button">Tout effacer</button>
-      </span>
+      <button class="link" id="resetBtn" type="button">Tout effacer</button>
+    </div>
+    <div class="filters-tools">
+        <span class="pill-pair" role="group" aria-label="Filtres enregistrés">
+          <button class="btn sm" id="saveFiltersBtn" type="button" title="Enregistrer les filtres actuels sous un nom">
+            <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M4 2h8v12l-4-3-4 3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>Enregistrer</button>
+          <button class="btn sm" id="loadFiltersBtn" type="button" title="Charger des filtres enregistrés">
+            <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M2 4.5h12M2 8h12M2 11.5h8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Charger</button>
+        </span>
     </div>
 
     <section class="group" aria-labelledby="h-period">
@@ -182,6 +186,7 @@
     </div>
     <div id="traitBar" class="trait-bar" aria-label="Raretés sélectionnées" hidden></div>
     <div id="warnings"></div>
+    <div id="favHidden" class="fav-hidden" hidden></div>
     <ol id="list" class="list"></ol>
     <button id="more" class="btn wide" hidden>Afficher plus</button>
     <div id="empty" class="empty" hidden></div>

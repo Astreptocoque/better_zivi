@@ -156,7 +156,28 @@ h3 { font-size: 1rem; margin: 0 0 .5rem; display: flex; align-items: center; jus
   display: flex; justify-content: space-between; align-items: center; margin: 0 .2rem .6rem;
   font-size: 1.05rem;
 }
-.head-links { display: flex; gap: .7rem; flex-wrap: wrap; justify-content: flex-end; font-size: .9rem; }
+.filters-head .link { font-size: .9rem; white-space: nowrap; }
+/* Enregistrer | Charger, on their own row under the title */
+.filters-tools { margin: -.15rem .2rem .7rem; }
+.filters-tools .pill-pair { display: flex; }
+.filters-tools .btn.sm { flex: 1; justify-content: center; padding-top: .4rem; padding-bottom: .4rem; }
+/* Enregistrer | Charger: one pill split in two */
+.pill-pair { display: inline-flex; }
+.fav-hidden {
+  display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap;
+  margin: .2rem .9rem .6rem; padding: .45rem .6rem; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--mist); font-size: .85rem; color: var(--slate);
+}
+.fav-hidden[hidden] { display: none; }
+.fav-hidden .btn.sm { border-radius: 999px; padding: .28rem .7rem; }
+.btn.sm {
+  display: inline-flex; align-items: center; gap: .35rem; font: inherit; font-size: .85rem; font-weight: 500;
+  padding: .28rem .5rem; line-height: 1.2; border-radius: 0;
+}
+.btn.sm svg { width: 13px; height: 13px; flex: none; color: var(--spruce); }
+.pill-pair .btn.sm:first-child { border-radius: 999px 0 0 999px; padding-left: .6rem; }
+.pill-pair .btn.sm:last-child { border-radius: 0 999px 999px 0; margin-left: -1px; padding-right: .6rem; }
+.pill-pair .btn.sm:hover, .pill-pair .btn.sm:focus-visible { position: relative; z-index: 1; background: var(--mist); }
 .sf-note { font-size: .85rem; color: var(--slate); margin: .3rem 0; }
 .saved-filters { list-style: none; padding: 0; margin: .6rem 0; max-height: 50vh; overflow-y: auto; }
 .saved-filters li { display: flex; align-items: center; gap: .3rem; border-bottom: 1px solid var(--line); }
