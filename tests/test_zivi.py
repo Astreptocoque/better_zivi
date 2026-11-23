@@ -187,6 +187,9 @@ def test_api_roundtrip(store, tmp_path, monkeypatch, sample_records, table):
     assert g and g[0]["label"].lower().startswith("laus")
     csv_text = client.post("/api/export", json={"housing": 1}).text
     assert csv_text.count("\n") == 4  # header + 3 rows
+    every = client.post("/api/search", json={"sort": "title", "ids_only": True}).json()
+    listed = client.post("/api/search", json={"sort": "title", "limit": 50}).json()
+    assert every["total"] == 5 and every["ids"] == [it["id"] for it in listed["items"]]
 
     # upload a new file through the UI endpoint
     import zivi.converter as conv
