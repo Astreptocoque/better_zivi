@@ -959,6 +959,8 @@ class Engine:
         else:
             order = sorted(matched, key=lambda i: -(self.rows[i]["number"] or 0))
 
+        if q.get("ids_only"):  # "select all" in the list: every match, in list order
+            return {"total": len(matched), "ids": order}
         offset = int(q.get("offset") or 0)
         limit = min(int(q.get("limit") or 50), 500)
         page = order[offset:offset + limit]

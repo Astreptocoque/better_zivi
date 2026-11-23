@@ -184,6 +184,13 @@
         </select>
       </label>
     </div>
+    <div class="sel-bar" id="selBar">
+      <label class="sel-all"><input type="checkbox" id="selAll"> Tout sélectionner</label>
+      <span class="sel-count" id="selCount" aria-live="polite"></span>
+      <button type="button" class="sel-clear" id="selClear" title="Désélectionner" aria-label="Désélectionner" hidden>×</button>
+      <button type="button" class="btn sm" id="selExport" disabled title="Exporter les fiches des affectations sélectionnées">
+        <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M8 2v8m0 0-3-3m3 3 3-3M3 12.5V14h10v-1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Exporter…</button>
+    </div>
     <div id="traitBar" class="trait-bar" aria-label="Raretés sélectionnées" hidden></div>
     <div id="warnings"></div>
     <div id="favHidden" class="fav-hidden" hidden></div>
@@ -227,6 +234,30 @@
   <ul class="saved-filters" id="lfList"></ul>
   <p class="sf-note" id="lfEmpty" hidden>Aucun filtre enregistré. Utilisez « Enregistrer » au-dessus des filtres.</p>
   <form method="dialog" class="dlg-actions"><button class="btn">Fermer</button></form>
+</dialog>
+
+<dialog id="exportDlg" aria-labelledby="exTitle">
+  <form method="dialog" id="exportForm">
+    <h2 id="exTitle">Exporter les fiches</h2>
+    <p id="exSummary"></p>
+    <fieldset class="ex-formats">
+      <legend>Format</legend>
+      <label class="choice"><input type="radio" name="exFormat" value="pdf" checked>
+        <span><b>PDF</b> <small>Pour lire ou imprimer.</small></span></label>
+      <label class="choice"><input type="radio" name="exFormat" value="md">
+        <span><b>Markdown</b> <small>Texte brut, pour des notes ou un éditeur.</small></span></label>
+      <label class="choice"><input type="radio" name="exFormat" value="html">
+        <span><b>HTML</b> <small>Page web, s’ouvre dans le navigateur.</small></span></label>
+    </fieldset>
+    <p class="sf-note">Un fichier par affectation, enregistré dans le dossier Téléchargements. Plusieurs
+      affectations sont regroupées dans un seul fichier ZIP.</p>
+    <div class="progress" id="exProg" hidden><div id="exBar"></div></div>
+    <p class="status" id="exStatus" role="status"></p>
+    <div class="dlg-actions">
+      <button class="btn" type="button" id="exCancel">Annuler</button>
+      <button class="btn primary" type="submit" id="exGo">Exporter</button>
+    </div>
+  </form>
 </dialog>
 
 <dialog id="importDlg">
@@ -416,6 +447,7 @@
 <script src="/static/vendor/leaflet/leaflet.js"></script>
 <script src="/static/vendor/leaflet/leaflet.markercluster.js"></script>
 <script src="/static/i18n.js"></script>
+<script src="/static/export.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

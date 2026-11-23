@@ -78,6 +78,7 @@ let S = Object.assign(blank(), store.get("zivi.state", {}));
 if (S.view_lang === "fr") S.view_tr = true; // older setting: "show in French"
 delete S.view_lang;
 let lastResult = null;
+const picked = new Set(); // entries ticked in the list, for the export; kept while the filters change
 let offset = 0;
 let bbox = null;
 
@@ -109,7 +110,7 @@ function query(extra = {}, raw = false) {
   return {
     text: "", text_mode: "keyword", sort: q.sort, favorites_only: true,
     lang: q.lang, view_lang: q.view_lang, search_original: q.search_original,
-    limit: q.limit, offset: q.offset,
+    limit: q.limit, offset: q.offset, ids_only: q.ids_only,
   };
 }
 /* Set by "Afficher les favoris sans les filtres"; not saved, and dropped as soon as a filter
@@ -294,6 +295,7 @@ async function runSearchNow() {
   showWarnings(res.warnings || []);
   $("#list").innerHTML = res.items.map(itemHtml).join("");
   $("#more").hidden = res.items.length >= res.total;
+  renderSelection();
   renderEmpty(res);
   renderFacets(res.facets || {});
   drawPoints(res.points || []);
@@ -318,6 +320,7 @@ async function loadMore() {
   const res = await (await api("/api/search", query({ offset }))).json();
   $("#list").insertAdjacentHTML("beforeend", res.items.map(itemHtml).join(""));
   $("#more").hidden = offset + res.items.length >= res.total;
+  renderSelection();
 }
 
 function renderCount(res) {
@@ -377,7 +380,9 @@ function itemHtml(it) {
   const sec = it.sector ? `<span class="sec" style="--c:${sectorColor(sectorCode(it.sector))}">${esc(sectorName(it.sector))}</span>` : "";
   const showRare = (S.sort === "rarity" || S.traits.length) && it.rare?.length;
   const rare = showRare ? `<div class="rare">${rareChips(it.rare, 4)}</div>` : "";
-  return `<li class="item" data-id="${it.id}" tabindex="0">${favBtn(it.id)}${dist}
+  const on = picked.has(it.id);
+  return `<li class="item${on ? " picked" : ""}" data-id="${it.id}" tabindex="0"><input type="checkbox" class="pick" data-pick="${it.id}"${on ? " checked" : ""}
+      aria-label="${esc(t("Sélectionner {title}", { title: it.title }))}">${favBtn(it.id)}${dist}
     <h4${it.title_orig ? ` title="${esc(t("Original : {title}", { title: it.title_orig }))}"` : ""}>${esc(it.title)}</h4>${sec}
     <div class="who">${esc(it.employer)} · ${esc(it.place || "")}</div>
     <div class="facts">${facts.map((f) => `<span>${f}</span>`).join("")}</div>
@@ -732,8 +737,20 @@ document.addEventListener("click", (e) => {
 }, true);
 
 const list = $("#list");
-list.addEventListener("click", (e) => { const li = e.target.closest(".item"); if (li) openDetail(+li.dataset.id); });
-list.addEventListener("keydown", (e) => { const li = e.target.closest(".item"); if (li && e.key === "Enter") openDetail(+li.dataset.id); });
+list.addEventListener("click", (e) => {
+  if (e.target.closest(".pick")) return; // the checkbox selects, it does not open the entry
+  const li = e.target.closest(".item"); if (li) openDetail(+li.dataset.id);
+});
+list.addEventListener("keydown", (e) => {
+  const li = e.target.closest(".item");
+  if (li && e.key === "Enter" && !e.target.closest(".pick")) openDetail(+li.dataset.id);
+});
+list.addEventListener("change", (e) => {
+  const box = e.target.closest(".pick"); if (!box) return;
+  const id = +box.dataset.pick;
+  if (box.checked) picked.add(id); else picked.delete(id);
+  renderSelection();
+});
 list.addEventListener("mouseover", (e) => { const li = e.target.closest(".item"); if (li) highlight(+li.dataset.id, true); });
 list.addEventListener("mouseout", (e) => { const li = e.target.closest(".item"); if (li) highlight(+li.dataset.id, false); });
 
@@ -1589,7 +1606,174 @@ function refreshUi() {
   if (!$("#adv").hidden) fillAdvanced();
 }
 
-/* ------------------------------------------------------------------ export, tabs, start */
+/* ------------------------------------------------------------------ selection
+   A checkbox on each entry; "Tout sélectionner" ticks every entry of the current list (all
+   pages, not only those shown), so it also covers the whole list and the favourites view. */
+const listKey = () => JSON.stringify(query({ offset: 0 }));
+let listIds = null, listIdsKey = ""; // every id of the current list, asked when needed
+async function currentListIds() {
+  const key = listKey();
+  if (listIds && listIdsKey === key) return listIds;
+  const res = await (await api("/api/search", query({ ids_only: true }))).json();
+  listIds = res.ids || []; listIdsKey = key;
+  return listIds;
+}
+function renderSelection() {
+  const n = picked.size;
+  $("#selCount").textContent = n ? tn(n, "{n} sélectionnée", "{n} sélectionnées") : "";
+  $("#selClear").hidden = !n;
+  $("#selExport").disabled = !n;
+  for (const box of $$("#list .pick")) {
+    box.checked = picked.has(+box.dataset.pick);
+    box.closest(".item").classList.toggle("picked", box.checked);
+  }
+  // the "all" box: exact when the ids of this list are known, else from the entries shown
+  const total = lastResult?.total || 0;
+  const ids = listIds && listIdsKey === listKey() ? listIds : $$("#list .pick").map((b) => +b.dataset.pick);
+  const nOn = ids.filter((id) => picked.has(id)).length;
+  const all = total > 0 && ids.length >= total && nOn === ids.length;
+  const box = $("#selAll");
+  box.disabled = !total;
+  box.checked = all;
+  box.indeterminate = !all && nOn > 0;
+}
+$("#selAll").addEventListener("change", async (e) => {
+  const on = e.target.checked;
+  e.target.disabled = true;
+  try {
+    for (const id of await currentListIds()) if (on) picked.add(id); else picked.delete(id);
+  } catch (err) { alert(err.message); }
+  renderSelection();
+});
+$("#selClear").addEventListener("click", () => { picked.clear(); renderSelection(); });
+
+/* ------------------------------------------------------------------ export of the entries
+   One file per selected entry (PDF, Markdown or HTML), with the content of its detail panel,
+   in the interface language; the entry texts are translated when "Afficher les affectations
+   dans la langue de l'interface" is on and a translation is stored. */
+function weeksText(weeks) {
+  if (!weeks?.length) return t("Aucune date publiée.");
+  const months = {};
+  for (const w of weeks) (months[w.slice(0, 7)] ||= []).push(w);
+  const name = (ym) => new Date(`${ym}-15`).toLocaleDateString(LOCALE[LANG], { month: "long", year: "numeric" });
+  return Object.entries(months).map(([ym, ws]) => `${name(ym)}${COLON()}${ws.map((w) => `${w.slice(8)}.${w.slice(5, 7)}`).join(", ")}`).join("\n");
+}
+function entryDoc(d) {
+  const trd = S.view_tr ? d.tr || {} : {};
+  const tx = (f) => trd[f] || d[f] || "";
+  const facts = [
+    [t("Domaine d’activité"), d.sector ? sectorName(d.sector) : ""],
+    [t("Canton"), (d.canton || "").split(",").filter(Boolean).join(", ")],
+    [t("Durée minimale"), d.min_weeks ? tn(d.min_weeks, "{n} semaine", "{n} semaines") : ""],
+    [t("Heures par semaine"), d.hours_per_week],
+    [t("Modèle d’horaire"), d.work_model ? dataLabel(d.work_model) : ""],
+    [t("Logement"), YN(d.housing)], [t("Repas"), YN(d.meals)],
+    [t("Travail le week-end"), JNM(d.weekend)], [t("Travail de nuit"), JNM(d.night)],
+    [t("Contrôle de réputation"), YN(d.reputation_check)],
+    [t("Programme prioritaire"), YN(d.priority_program)],
+    [t("À l’étranger"), d.abroad ? t("Oui") : ""],
+    [t("Types de tâches"), (d.task_areas || []).map(dataLabel).join(", ")],
+  ].filter(([, v]) => v != null && v !== "").map(([k, v]) => [k, String(v)]);
+  const addr = (d.locations || []).map((l) => l.label || [l.plz, l.city].filter(Boolean).join(" ")).filter(Boolean);
+  const contact = [[d.contact_name, d.contact_role].filter(Boolean).join(", "), d.contact_phone, d.contact_email].filter(Boolean);
+  const sections = [
+    [t("Tâches"), tx("tasks")],
+    [t("Compétences requises"), tx("required_skills")],
+    [t("Compétences souhaitées"), tx("desired_skills")],
+    [t("Cours du service civil"), tx("courses")],
+    [t("Semaines de début disponibles"), weeksText(d.weeks)],
+    [t("À propos de l’établissement"), tx("employer_description")],
+    [t("Adresse de l’affectation"), addr.join("\n")],
+    [t("Contact"), contact.join("\n")],
+    [t("Comment postuler"), tx("how_to_apply")],
+  ].filter(([, text]) => String(text || "").trim());
+  return {
+    lang: Object.keys(trd).length ? LANG : d.language || LANG,
+    title: tx("title") || `${t("N°")} ${d.number}`,
+    head: `${t("N°")} ${d.number}`,
+    who: [d.employer, d.place].filter(Boolean).join(" · "),
+    url: d.url || "", urlLabel: t("Ouvrir sur ZiviConnect"),
+    facts, sections, colon: COLON(),
+    footer: t("Exporté de Better Zivi le {date}", { date: new Date().toLocaleDateString(LOCALE[LANG], { dateStyle: "long" }) }),
+  };
+}
+const EXPORT_FORMATS = {
+  pdf: { ext: "pdf", type: "application/pdf", render: docToPdf },
+  md: { ext: "md", type: "text/markdown;charset=utf-8", render: docToMarkdown },
+  html: { ext: "html", type: "text/html;charset=utf-8", render: docToHtml },
+};
+const slug = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/ß/g, "ss")
+  .replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60).replace(/-+$/, "").toLowerCase();
+function download(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), { href: url, download: name });
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+const exportFormat = () => $("input[name=exFormat]:checked")?.value || "pdf";
+let exporting = null; // { stop } while an export runs
+function openExport() {
+  if (!picked.size) return;
+  const f = store.get("zivi.exportFormat", "pdf");
+  const radio = $(`input[name=exFormat][value=${EXPORT_FORMATS[f] ? f : "pdf"}]`);
+  if (radio) radio.checked = true;
+  $("#exSummary").textContent = tn(picked.size, "{n} affectation sélectionnée.", "{n} affectations sélectionnées.");
+  $("#exStatus").textContent = ""; $("#exStatus").classList.remove("err");
+  $("#exProg").hidden = true; $("#exBar").style.width = "0";
+  $("#exGo").disabled = false; $("#exCancel").textContent = t("Annuler");
+  $("#exportDlg").showModal();
+}
+async function runExport() {
+  const fmt = EXPORT_FORMATS[exportFormat()];
+  store.set("zivi.exportFormat", exportFormat());
+  // the order of the list when it is known, else the order of the ticks
+  let order = [...picked];
+  try { const ids = await currentListIds(); const rank = new Map(ids.map((id, i) => [id, i]));
+    order.sort((a, b) => (rank.get(a) ?? 1e9) - (rank.get(b) ?? 1e9)); } catch { /* keep the tick order */ }
+  const run = exporting = { stop: false };
+  $("#exGo").disabled = true; $("#exProg").hidden = false;
+  const status = $("#exStatus");
+  // one entry: its file; several: one ZIP holding a file per entry
+  const zip = order.length > 1 ? new ZipWriter() : null;
+  let done = 0, failed = 0;
+  for (const id of order) {
+    if (run.stop) break;
+    status.textContent = t("Export : {done} / {total}…", { done: nf(done + failed), total: nf(order.length) });
+    try {
+      const d = await (await api(withLang(`/api/assignment/${id}`))).json();
+      const doc = entryDoc(d);
+      doc.map = await swissMap(d.locations, d.place || d.locations?.find((l) => l.lat != null)?.label,
+        t("Carte de la Suisse : {place}", { place: d.place || doc.who }));
+      const name = `zivi-${d.number}${slug(doc.title) ? `-${slug(doc.title)}` : ""}.${fmt.ext}`;
+      if (zip) await zip.add(name, fmt.render(doc));
+      else download(new Blob([fmt.render(doc)], { type: fmt.type }), name);
+      done += 1;
+    } catch (e) {
+      console.error("export", id, e);
+      failed += 1;
+    }
+    $("#exBar").style.width = `${Math.round((100 * (done + failed)) / order.length)}%`;
+  }
+  const zipped = zip && done && !run.stop;
+  if (zipped) {
+    const day = new Date().toISOString().slice(0, 10);
+    download(zip.blob(), `zivi-${S.favorites_only ? "favoris" : "affectations"}-${day}-${fmt.ext}.zip`);
+  }
+  exporting = null;
+  const msg = [run.stop ? t("Export interrompu.") : "",
+    run.stop && zip ? t("Aucun fichier enregistré.")
+      : zipped ? tn(done, "{n} fichier exporté dans un ZIP.", "{n} fichiers exportés dans un ZIP.")
+      : tn(done, "{n} fichier exporté.", "{n} fichiers exportés."),
+    failed ? tn(failed, "{n} affectation n’a pas pu être exportée.", "{n} affectations n’ont pas pu être exportées.") : ""];
+  status.textContent = msg.filter(Boolean).join(" ");
+  status.classList.toggle("err", !!failed);
+  $("#exGo").disabled = false; $("#exCancel").textContent = t("Fermer");
+}
+$("#selExport").addEventListener("click", openExport);
+$("#exportForm").addEventListener("submit", (e) => { e.preventDefault(); if (!exporting) runExport(); });
+$("#exCancel").addEventListener("click", () => { if (exporting) exporting.stop = true; else $("#exportDlg").close(); });
+$("#exportDlg").addEventListener("cancel", () => { if (exporting) exporting.stop = true; }); // Escape
+
+/* ------------------------------------------------------------------ CSV export, tabs, start */
 $("#exportBtn").addEventListener("click", async () => {
   const r = await api("/api/export", query());
   const url = URL.createObjectURL(await r.blob());
