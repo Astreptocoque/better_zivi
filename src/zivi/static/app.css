@@ -436,9 +436,10 @@ body.map-full #filters, body.map-full #results { display: none; }
 }
 
 /* ---- drawer */
-.drawer { position: fixed; inset: 0; z-index: 2000; background: rgba(10, 20, 15, .35); display: flex; justify-content: flex-end; }
+/* opens on the left, over the filters and results, without dimming or blocking the map */
+.drawer { position: fixed; inset: 0; z-index: 2000; display: flex; justify-content: flex-start; pointer-events: none; }
 .drawer[hidden] { display: none; }
-.drawer-panel { width: min(640px, 100%); height: 100%; overflow: auto; background: var(--panel); padding: 1.4rem 1.6rem 3rem; position: relative; }
+.drawer-panel { width: min(640px, 100%); height: 100%; overflow: auto; background: var(--panel); padding: 1.4rem 1.6rem 3rem; position: relative; pointer-events: auto; box-shadow: 4px 0 18px rgba(10, 20, 15, .18); }
 .close { position: absolute; right: .8rem; top: .6rem; border: 0; background: none; font-size: 1.8rem; cursor: pointer; color: var(--slate); }
 .d-num { color: var(--slate); margin: 0; }
 .d-title { font-size: 1.45rem; margin: .1rem 0 .3rem; line-height: 1.25; }

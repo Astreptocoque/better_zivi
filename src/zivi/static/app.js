@@ -815,7 +815,8 @@ ${d.contact_email ? `<a href="mailto:${esc(d.contact_email)}">${esc(d.contact_em
   }
   const z = $("#zoomTo");
   if (z) z.onclick = () => {
-    closeDrawer(); showPane("mapPane");
+    if (window.matchMedia("(max-width: 980px)").matches) closeDrawer(); // phones: the panel covers the map
+    showPane("mapPane");
     const l = d.locations.find((x) => x.lat != null); map.setView([l.lat, l.lon], 13);
     const m = (markersById.get(id) || [])[0];
     if (m) cluster.zoomToShowLayer(m, () => m.openPopup());
